@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { VoltClawAgent, type LLMProvider, type Transport, type Store, type Tool } from '../core/index.js';
+import { VoltClawAgent, type LLMProvider, type Tool } from '../core/index.js';
 import type { MessageContext, ReplyContext, ErrorContext } from '../core/index.js';
 import { NostrClient, generateNewKeyPair } from '../nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
@@ -82,13 +82,17 @@ VoltClaw - Recursive Autonomous Agent
 
 Usage:
   voltclaw [command] [options]
+  voltclaw "your query here"  # One-shot query mode
 
 Commands:
-  start               Start the agent
+  start               Start the agent daemon
   config [key] [val]  View or edit configuration
   keys                Show current identity
   version             Show version info
   help                Show this help message
+
+Options:
+  --recursive         Enable recursive delegation for one-shot query
 `);
 }
 
@@ -104,10 +108,6 @@ async function startCommand(): Promise<void> {
     relays: config.relays,
     privateKey: keys.secretKey
   });
-  // Use FileStore. Ideally pass path if FileStore supports it.
-  // Looking at src/memory/index.ts -> src/memory/file-store.ts (implied).
-  // I need to check if FileStore accepts path.
-  // Assuming default for now or check constructor.
   const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
 
   const builtinTools = createBuiltinTools();
@@ -142,6 +142,51 @@ async function startCommand(): Promise<void> {
   });
 }
 
+async function oneShotQuery(query: string, recursive: boolean): Promise<void> {
+  const config = await loadConfig();
+  const keys = await loadOrGenerateKeys(); // Use real keys or temp? Real keys for persistence.
+
+  const llm = createLLMProvider(config.llm);
+
+  // For one-shot, we might not need full Nostr transport if we are just querying via CLI directly
+  // But VoltClawAgent is built around transport.
+  // Let's use a MemoryTransport or similar if available, or just the Nostr one but focused.
+  // Actually, to support recursion via "delegate" (which sends messages to self), we NEED the transport.
+
+  const transport = new NostrClient({
+    relays: config.relays,
+    privateKey: keys.secretKey
+  });
+
+  const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
+  const builtinTools = createBuiltinTools();
+
+  const agent = new VoltClawAgent({
+    llm,
+    transport,
+    persistence: store,
+    delegation: recursive ? config.delegation : { ...config.delegation, maxDepth: 1 }, // Limit depth if not recursive
+    tools: builtinTools,
+    hooks: {
+       onDelegation: async (ctx) => {
+         if (recursive) console.log(`[Delegation] ${ctx.task} (depth ${ctx.depth})`);
+       }
+    }
+  });
+
+  await agent.start();
+
+  try {
+    const response = await agent.query(query);
+    console.log(response);
+  } catch (error) {
+    console.error("Error executing query:", error);
+  } finally {
+    await agent.stop();
+    process.exit(0);
+  }
+}
+
 function createLLMProvider(config: CLIConfig['llm']): LLMProvider {
   switch (config.provider) {
     case 'ollama':
@@ -173,8 +218,20 @@ async function main(): Promise<void> {
   }
 
   const command = args[0];
+  if (!command) {
+    printHelp();
+    return;
+  }
 
   try {
+    if (!['start', 'keys', 'config', 'version', 'help'].includes(command) && !command.startsWith('-')) {
+        // Assume argument is a query
+        const query = command;
+        const recursive = args.includes('--recursive');
+        await oneShotQuery(query, recursive);
+        return;
+    }
+
     switch (command) {
       case 'start':
         await startCommand();

@@ -3,12 +3,14 @@ import type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParamete
 import { timeTool, dateTool, sleepTool } from './time.js';
 import { createDelegateTool, estimateTokens, estimateTokensTool, type DelegateToolConfig } from './delegate.js';
 import { httpGetTool, httpPostTool } from './http.js';
+import { readFileTool, writeFileTool, listFilesTool } from './files.js';
 
 export { ToolRegistry, type ToolExecutor };
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParameterProperty };
 export { timeTool, dateTool, sleepTool };
 export { createDelegateTool, estimateTokens, estimateTokensTool, type DelegateToolConfig };
 export { httpGetTool, httpPostTool };
+export { readFileTool, writeFileTool, listFilesTool };
 
 export function createBuiltinTools(): Tool[] {
   return [
@@ -17,6 +19,9 @@ export function createBuiltinTools(): Tool[] {
     sleepTool,
     estimateTokensTool,
     httpGetTool,
-    httpPostTool
+    httpPostTool,
+    readFileTool,
+    writeFileTool,
+    listFilesTool
   ];
 }
