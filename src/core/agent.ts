@@ -1,3 +1,6 @@
+import { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR } from './bootstrap.js';
+export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
+
 import type {
   VoltClawAgentOptions,
   LLMProvider,
@@ -62,6 +65,7 @@ export class VoltClawAgent {
   private readonly state: AgentState = { isRunning: false, isPaused: false };
   private transportUnsubscribe?: Unsubscribe;
   private pruneTimer?: ReturnType<typeof setInterval>;
+  private systemPromptTemplate?: string;
 
   constructor(options: VoltClawAgentOptions = {}) {
     this.llm = this.resolveLLM(options.llm);
@@ -145,6 +149,14 @@ export class VoltClawAgent {
       return;
     }
 
+    // Try to bootstrap if needed
+    try {
+        await bootstrap();
+        this.systemPromptTemplate = await loadSystemPrompt();
+    } catch (e) {
+        this.logger.warn("Failed to bootstrap configuration", { error: String(e) });
+    }
+
     await this.transport.start();
     await this.store.load?.();
 
@@ -199,15 +211,64 @@ export class VoltClawAgent {
 
   async query(message: string, _options?: QueryOptions): Promise<string> {
     const session = this.store.get('self', true);
+
+    // Ensure we start with a clean state for one-shot if needed, or handle session logic better
+    // For now, simple append
+    if (session.depth === undefined) session.depth = 0;
+
     session.history.push({ role: 'user', content: message });
     
-    const messages = session.history.slice(-this.maxHistory);
-    const response = await this.llm.chat(messages);
+    // Use handleTopLevel logic but wait for result?
+    // query() is synchronous-looking but really async.
+    // We should reuse handleTopLevel logic but capture the final answer.
+    // However, handleTopLevel sends via transport.
+    // For local query, we want the result directly.
     
-    session.history.push({ role: 'assistant', content: response.content });
+    // Adapted from handleTopLevel for direct response:
+    session.subTasks = {};
+    session.delegationCount = 0;
+    session.estCostUSD = 0;
+    session.actualTokensUsed = 0;
+    session.topLevelStartedAt = Date.now();
+
+    const systemPrompt = this.buildSystemPrompt(session.depth);
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...session.history.slice(-this.maxHistory)
+    ];
+
+    let response = await this.llm.chat(messages, {
+      tools: this.getToolDefinitions(session.depth)
+    });
+
+    while (response.toolCalls && response.toolCalls.length > 0) {
+      messages.push({
+        role: 'assistant',
+        content: response.content,
+        toolCalls: response.toolCalls
+      });
+
+      for (const call of response.toolCalls) {
+        // Execute tool (including delegate if enabled)
+        const result = await this.executeTool(call.name, call.arguments, session, 'self');
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: JSON.stringify(result)
+        });
+      }
+
+      response = await this.llm.chat(messages, {
+        tools: this.getToolDefinitions(session.depth)
+      });
+    }
+
+    const reply = response.content || '[error]';
+    session.history.push({ role: 'assistant', content: reply });
     this.pruneHistory(session);
+    await this.store.save?.();
     
-    return response.content;
+    return reply;
   }
 
   private async handleMessage(from: string, content: string, meta: MessageMeta): Promise<void> {
@@ -336,6 +397,12 @@ export class VoltClawAgent {
       ? '\nMUST produce final concise answer NOW. No further delegation.'
       : '';
 
+    // Use template or fallback
+    const basePrompt = this.systemPromptTemplate || `You are VoltClaw (depth {depth}/{maxDepth}).`;
+
+    // We need to inject depth specific context into the subtask prompt
+    // Ideally we use buildSystemPrompt but customized for subtask
+    // For now, let's stick to a simpler subtask prompt to keep context low
     const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
 Task: ${task}
 Parent context: ${contextSummary}${mustFinish}`;
@@ -502,7 +569,10 @@ Parent context: ${contextSummary}${mustFinish}`;
       })
       .join(', ');
 
-    return `You are VoltClaw (depth ${depth}/${this.maxDepth}).
+    let template = this.systemPromptTemplate;
+    if (!template) {
+        // Fallback if loadSystemPrompt failed or hasn't run
+        template = `You are VoltClaw (depth {depth}/{maxDepth}).
 A recursive autonomous coding agent.
 
 OBJECTIVE:
@@ -516,15 +586,27 @@ RECURSION STRATEGY:
 4. Combine the results.
 
 TOOLS:
-${toolNames}
+{tools}
 
 CONSTRAINTS:
-- Budget: $${this.budgetUSD}
-- Max Depth: ${this.maxDepth}
-- Current Depth: ${depth}
-${depth >= this.maxDepth - 1 ? '- WARNING: MAX DEPTH REACHED. DO NOT DELEGATE. SOLVE DIRECTLY.' : ''}
+- Budget: {budget}
+- Max Depth: {maxDepth}
+- Current Depth: {depth}
+{depthWarning}
 
 You are persistent, efficient, and recursive.`;
+    }
+
+    const depthWarning = depth >= this.maxDepth - 1
+        ? '- WARNING: MAX DEPTH REACHED. DO NOT DELEGATE. SOLVE DIRECTLY.'
+        : '';
+
+    return template
+        .replace('{depth}', String(depth))
+        .replace('{maxDepth}', String(this.maxDepth))
+        .replace('{budget}', String(this.budgetUSD))
+        .replace('{tools}', toolNames)
+        .replace('{depthWarning}', depthWarning);
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string }> {
