@@ -2,13 +2,14 @@
 
 import { VoltClawAgent, type LLMProvider } from '../core/index.js';
 import type { MessageContext, ReplyContext, ErrorContext } from '../core/index.js';
-import { NostrClient, generateNewKeyPair } from '../nostr/index.js';
+import { NostrClient, generateNewKeyPair, resolveToHex } from '../nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { FileStore } from '../memory/index.js';
 import { createAllTools } from '../tools/index.js';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import readline from 'readline';
 import { fileURLToPath } from 'url';
 
 const VOLTCLAW_DIR = path.join(os.homedir(), '.voltclaw');
@@ -124,7 +125,7 @@ Options:
 
 // --- Commands ---
 
-async function startCommand(): Promise<void> {
+async function startCommand(interactive: boolean = false): Promise<void> {
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
 
@@ -147,10 +148,14 @@ async function startCommand(): Promise<void> {
     tools,
     hooks: {
       onMessage: async (ctx: MessageContext) => {
-        console.log(`[${new Date().toISOString()}] Message from ${ctx.from.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
+        if (!interactive) {
+          console.log(`[${new Date().toISOString()}] Message from ${ctx.from.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
+        }
       },
       onReply: async (ctx: ReplyContext) => {
-        console.log(`[${new Date().toISOString()}] Reply to ${ctx.to.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
+        if (!interactive) {
+          console.log(`[${new Date().toISOString()}] Reply to ${ctx.to.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
+        }
       },
       onError: async (ctx: ErrorContext) => {
         console.error(`[${new Date().toISOString()}] Error:`, ctx.error.message);
@@ -163,16 +168,81 @@ async function startCommand(): Promise<void> {
 
   await agent.start();
 
-  console.log('VoltClaw agent is running. Press Ctrl+C to stop.');
+  if (interactive) {
+    console.log('Interactive REPL mode. Type your query below.');
+    console.log('Type "exit" to quit.');
 
-  // Keep process alive
-  return new Promise(() => {
-    process.on('SIGINT', async () => {
-        console.log('\nShutting down...');
-        await agent.stop();
-        process.exit(0);
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: '> '
     });
+
+    rl.prompt();
+
+    rl.on('line', async (line) => {
+      const query = line.trim();
+      if (query === 'exit') {
+        rl.close();
+        return;
+      }
+      if (query) {
+        try {
+          const response = await agent.query(query);
+          console.log(response);
+        } catch (error) {
+          console.error('Error:', error);
+        }
+      }
+      rl.prompt();
+    });
+
+    rl.on('close', async () => {
+      console.log('\nShutting down...');
+      await agent.stop();
+      process.exit(0);
+    });
+
+  } else {
+    console.log('VoltClaw agent is running. Press Ctrl+C to stop.');
+    // Keep process alive
+    return new Promise(() => {
+      process.on('SIGINT', async () => {
+          console.log('\nShutting down...');
+          await agent.stop();
+          process.exit(0);
+      });
+    });
+  }
+}
+
+async function dmCommand(to: string, message: string): Promise<void> {
+  const config = await loadConfig();
+  const keys = await loadOrGenerateKeys();
+  const transport = new NostrClient({
+    relays: config.relays,
+    privateKey: keys.secretKey
   });
+
+  try {
+    const hexKey = resolveToHex(to);
+    console.log(`Connecting to relays...`);
+    await transport.start();
+
+    // Allow some time for connection
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    console.log(`Sending DM to ${hexKey.slice(0, 8)}...`);
+    await transport.send(hexKey, message);
+    console.log('Message sent.');
+
+    // Allow some time for publish
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  } catch (error) {
+    console.error('Failed to send DM:', error);
+  } finally {
+    await transport.stop();
+  }
 }
 
 async function oneShotQuery(query: string, recursive: boolean): Promise<void> {
@@ -231,9 +301,19 @@ async function run(args: string[]): Promise<void> {
 
   switch (command) {
     case 'start':
-    case 'repl':
-      await startCommand();
+      await startCommand(false);
       break;
+    case 'repl':
+      await startCommand(true);
+      break;
+    case 'dm': {
+      if (args.length < 3) {
+        console.error('Usage: voltclaw dm <npub/hex> <message>');
+        process.exit(1);
+      }
+      await dmCommand(args[1] || '', args[2] || '');
+      break;
+    }
     case 'keys': {
       const keys = await loadOrGenerateKeys();
       console.log('Current identity:');
