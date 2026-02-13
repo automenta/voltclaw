@@ -1,23 +1,63 @@
 {
-  "name": "voltclaw-monorepo",
+  "name": "voltclaw",
   "version": "1.0.0",
-  "private": true,
-  "description": "VoltClaw - Recursive autonomous agent platform for TypeScript",
+  "description": "Recursive autonomous agent platform for TypeScript",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "voltclaw": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./nostr": {
+      "import": "./dist/nostr/index.js",
+      "types": "./dist/nostr/index.d.ts"
+    },
+    "./llm": {
+      "import": "./dist/llm/index.js",
+      "types": "./dist/llm/index.d.ts"
+    },
+    "./tools": {
+      "import": "./dist/tools/index.js",
+      "types": "./dist/tools/index.d.ts"
+    },
+    "./memory": {
+      "import": "./dist/memory/index.js",
+      "types": "./dist/memory/index.d.ts"
+    },
+    "./testing": {
+      "import": "./dist/testing/index.js",
+      "types": "./dist/testing/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli/index.js",
+      "types": "./dist/cli/index.d.ts"
+    }
+  },
   "scripts": {
-    "build": "tsc --build tsconfig.build.json",
+    "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist packages/*/dist packages/@voltclaw/*/dist"
+    "clean": "rm -rf dist"
   },
   "keywords": ["agent", "ai", "llm", "nostr", "recursive", "autonomous"],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "nostr-tools": "^2.23.1",
+    "nostr-relaypool": "^0.6.30",
+    "ws": "^8.19.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/node": "^25.2.3",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.18.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0",

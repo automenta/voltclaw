@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { VoltClawAgent } from 'voltclaw';
-import { MemoryStore } from '@voltclaw/memory';
-import { MockLLM } from '@voltclaw/testing';
+import { VoltClawAgent } from '../../src/index.js';
+import { MemoryStore } from '../../src/memory/index.js';
+import { MockLLM } from '../../src/testing/index.js';
 
 describe('VoltClawAgent', () => {
   describe('constructor', () => {

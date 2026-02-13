@@ -14,12 +14,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      'voltclaw': resolve(__dirname, 'packages/voltclaw/src/index.ts'),
-      '@voltclaw/nostr': resolve(__dirname, 'packages/@voltclaw/nostr/src/index.ts'),
-      '@voltclaw/llm': resolve(__dirname, 'packages/@voltclaw/llm/src/index.ts'),
-      '@voltclaw/memory': resolve(__dirname, 'packages/@voltclaw/memory/src/index.ts'),
-      '@voltclaw/tools': resolve(__dirname, 'packages/@voltclaw/tools/src/index.ts'),
-      '@voltclaw/testing': resolve(__dirname, 'packages/@voltclaw/testing/src/index.ts')
+      'voltclaw': resolve(__dirname, 'src/index.ts'),
+      '@voltclaw/nostr': resolve(__dirname, 'src/nostr/index.ts'),
+      '@voltclaw/llm': resolve(__dirname, 'src/llm/index.ts'),
+      '@voltclaw/memory': resolve(__dirname, 'src/memory/index.ts'),
+      '@voltclaw/tools': resolve(__dirname, 'src/tools/index.ts'),
+      '@voltclaw/testing': resolve(__dirname, 'src/testing/index.ts'),
+      '@voltclaw/cli': resolve(__dirname, 'src/cli/index.ts')
     }
   }
 });

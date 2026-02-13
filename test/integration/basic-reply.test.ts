@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { MockRelay, MockClient } from '@voltclaw/testing';
+import { MockRelay, MockClient } from '../../src/testing/index.js';
 
 describe('MockRelay', () => {
   let relay: MockRelay;
