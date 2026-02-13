@@ -1,6 +1,10 @@
 import { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR } from './bootstrap.js';
 export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
 
+import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
+import { NostrClient } from '../nostr/index.js';
+import { FileStore } from '../memory/index.js';
+
 import type {
   VoltClawAgentOptions,
   LLMProvider,
@@ -18,7 +22,10 @@ import type {
   Session,
   ChatMessage,
   MessageMeta,
-  ToolCallResult
+  ToolCallResult,
+  LLMConfig,
+  TransportConfig,
+  PersistenceConfig
 } from './types.js';
 import {
   VoltClawError,
@@ -101,6 +108,15 @@ export class VoltClawAgent {
     if (typeof llm === 'object' && 'chat' in llm && typeof llm.chat === 'function') {
       return llm as LLMProvider;
     }
+    if (typeof llm === 'object' && 'provider' in llm) {
+      const config = llm as import('./types.js').LLMConfig;
+      switch (config.provider) {
+        case 'ollama': return new OllamaProvider(config);
+        case 'openai': return new OpenAIProvider(config);
+        case 'anthropic': return new AnthropicProvider(config);
+        default: throw new ConfigurationError(`Unknown LLM provider: ${config.provider}`);
+      }
+    }
     throw new ConfigurationError('Invalid LLM configuration');
   }
 
@@ -111,6 +127,15 @@ export class VoltClawAgent {
     if (typeof transport === 'object' && 'subscribe' in transport && typeof transport.subscribe === 'function') {
       return transport as Transport;
     }
+    if (typeof transport === 'object' && 'type' in transport) {
+      const config = transport as import('./types.js').TransportConfig;
+      if (config.type === 'nostr') {
+        return new NostrClient({
+          relays: config.relays ?? [],
+          privateKey: config.privateKey
+        });
+      }
+    }
     throw new ConfigurationError('Invalid transport configuration');
   }
 
@@ -120,6 +145,12 @@ export class VoltClawAgent {
     }
     if (typeof persistence === 'object' && 'get' in persistence && typeof persistence.get === 'function') {
       return persistence as Store;
+    }
+    if (typeof persistence === 'object' && 'type' in persistence) {
+      const config = persistence as import('./types.js').PersistenceConfig;
+      if (config.type === 'file') {
+        return new FileStore({ path: config.path ?? `${VOLTCLAW_DIR}/data.json` });
+      }
     }
     throw new ConfigurationError('Invalid persistence configuration');
   }
@@ -660,18 +691,18 @@ You are persistent, efficient, and recursive.`;
 class VoltClawAgentBuilder {
   private options: VoltClawAgentOptions = {};
 
-  withLLM(llm: LLMProvider | ((b: LLMBuilder) => LLMProvider)): this {
+  withLLM(llm: LLMProvider | LLMConfig | ((b: LLMBuilder) => LLMBuilder)): this {
     if (typeof llm === 'function') {
-      this.options.llm = llm(new LLMBuilder());
+      this.options.llm = llm(new LLMBuilder()).build();
     } else {
       this.options.llm = llm;
     }
     return this;
   }
 
-  withTransport(transport: Transport | ((b: TransportBuilder) => Transport)): this {
+  withTransport(transport: Transport | TransportConfig | ((b: TransportBuilder) => TransportBuilder)): this {
     if (typeof transport === 'function') {
-      this.options.transport = transport(new TransportBuilder());
+      this.options.transport = transport(new TransportBuilder()).build();
     } else {
       this.options.transport = transport;
     }

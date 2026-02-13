@@ -39,6 +39,7 @@
     }
   },
   "scripts": {
+    "start": "node dist/cli/index.js",
     "build": "tsc",
     "prepublishOnly": "npm run clean && npm run build && npm test",
     "test": "vitest run",
