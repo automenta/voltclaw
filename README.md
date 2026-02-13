@@ -1,104 +1,183 @@
 # VoltClaw ⚡
 
-**VoltClaw** is an open, self-evolving autonomous agent platform.  
-Born from the spirit of exploration, it combines elegant architecture with unbounded recursive potential — a quiet invitation to build intelligence that improves itself, forever.
+**VoltClaw** is an open, self-evolving autonomous agent platform for TypeScript/Node.js.
 
 🌌 **One agent. Any task. Endless depth.**
 
-### 🧭 Core Philosophy
+## Quick Start
 
-VoltClaw exists to lower the friction between thought and action.  
-No walled gardens. No forced specializations.  
-Just a clean, modular core that lets the model decompose, delegate, act, reflect — and call *itself* when the problem demands it.
+```bash
+# Install dependencies
+pnpm install
 
-We believe real autonomy emerges from:
+# Start the agent
+pnpm start
 
-- **recursion**, not rigid multi-agent hierarchies  
-- **minimalism**, not feature bloat  
-- **open-ended self-improvement**, not one-shot prompting
-
-### ✨ Architecture Highlights
-
-- **VoltAgent foundation** — battle-tested TypeScript primitives for tools, memory, guardrails, workflows, observability  
-- **Nostr communication layer** (optional today) — encrypted, decentralized, censorship-resistant DMs as the native channel  
-- **Single-file bootstrap** possible — the entire recursive heart fits in ~400 LOC today, grows without rewrite  
-- **Dynamic skills ecosystem** — drop `.ts`/`.js` files into `~/.clawvolt/skills/`, instantly available  
-- **Recursive delegation** — the `delegate` tool spawns child instances of *the same agent* via self-messages, with depth & budget caps
-
-Communication, persistence, compute — all swappable.  
-Nostr is elegant today; tomorrow it might be Matrix, XMPP, WebSocket hub, local Unix socket, or nothing at all.  
-The design anticipates change.
-
-### 🔄 Recursive Power — Inspired by `ypi`
-
-`ypi` (https://github.com/rawwerks/ypi) — created by rawwerks — is a beautiful proof.
-
-Built on the [Pi](https://github.com/badlogic/pi-mono) coding agent, `ypi` adds one function (`rlm_query`) and a prompt that teaches the agent to call *itself* recursively.
-
-Each child runs in an isolated workspace (via `jj`), decomposes subtasks, edits files safely, returns patches — and can recurse further.  
-Guardrails (max depth, call limits, budget, timeouts) keep it sane.
-
-The result: an agent that solves problems far larger than its context window by repeatedly breaking them apart and delegating to identical copies of itself.
-
-VoltClaw ports exactly this insight to a general-purpose agent:
-
-- `delegate(task, summary?)` → self-DM to own npub  
-- Child receives elevated `depth` tag, optional restricted toolset  
-- Parent collects `subtask_result` messages, synthesizes  
-- Same guardrails: depth, calls, rough USD budget tracking  
-- Same elegance: every level is the same code, same prompt, same soul
-
-This is not multi-agent theater.  
-It is **self-similarity** — the mathematical beauty of fractals applied to cognition.
-
-### 🚀 Usability — General-Purpose from Day One
-
-```text
-Send one DM:  
-"Plan and launch a micro SaaS landing page for AI-generated bedtime stories"
-
-VoltClaw:  
-• delegates research → market/competitors  
-• delegates copy → tone & structure  
-• delegates design → color palette & layout sketch  
-• delegates code → HTML/CSS/JS stub  
-• synthesizes → delivers full plan + artifacts
+# Or with npx
+npx voltclaw start
 ```
 
-No predefined roles. No YAML workflows.  
-Just natural language + recursion + tools.
+## Features
 
-### 🔮 The Open Frontier
+- **Recursive Delegation** - Agents call themselves for complex tasks
+- **Nostr Native** - Decentralized, encrypted communication
+- **LLM Agnostic** - Ollama, OpenAI, Anthropic, or custom providers
+- **Zero Config** - Works out of the box with sensible defaults
+- **Plugin Ready** - Extend with tools, transports, providers
+- **Production Ready** - Health checks, metrics, graceful shutdown
 
-We are still in the early hours of agentic intelligence.
+## Installation
 
-VoltClaw is intentionally unfinished:
+```bash
+npm install voltclaw
+```
 
-- Plug in local models (Ollama), frontier APIs, mixtures-of-experts  
-- Add voice I/O, vision, long-term episodic memory  
-- Bridge to VoltAgent full workflows / evals / tracing dashboards  
-- Grow skills: browser, shell, git, email, calendar, code editor, physics sim, MIDI sequencer…  
-- Evolve communication: Nostr → anything bidirectional & encrypted  
-- Self-modify: let the agent read/write its own prompt, tools, guardrails (with human veto)
+## Usage
 
-This is not a product.  
-It is a **starting point** — a minimal, recursive seed for the community to cultivate.
+### CLI
 
-### 📜 Mission
+```bash
+# Start the agent
+voltclaw start
 
-> Build agents that think in loops, not lists.  
-> Let recursion be the default, not the exception.  
-> Keep the core so small it can live on a single screen — then never stop growing it.  
->  
-> Intelligence wants to understand itself.  
-> Give it the mirror.
+# Send a DM
+voltclaw dm npub1... "Hello!"
 
-⚡🐾 **VoltClaw** — the recursive frontier is open.  
-Come explore. Come improve. Come recurse.
+# Show configuration
+voltclaw config
 
-Star it. Fork it. Break it. Make it better.  
-The only rule is: keep calling yourself.
+# Manage keys
+voltclaw keys
+```
 
-[GitHub →](#) (link when repo exists)  
-[Community sketches & skills →](#) (future ClawHub equivalent)  
+### Programmatic
 
+```typescript
+import { VoltClawAgent } from 'voltclaw';
+import { NostrClient } from '@voltclaw/nostr';
+import { OllamaProvider } from '@voltclaw/llm';
+import { FileStore } from '@voltclaw/memory';
+
+const agent = new VoltClawAgent({
+  llm: new OllamaProvider({ model: 'llama3.2' }),
+  transport: new NostrClient({
+    relays: ['wss://relay.damus.io']
+  }),
+  persistence: new FileStore({ path: '~/.voltclaw/sessions.json' })
+});
+
+await agent.start();
+
+const reply = await agent.query('What is 2+2?');
+console.log(reply); // "4"
+
+await agent.stop();
+```
+
+### Using the Builder API
+
+```typescript
+import { VoltClawAgent } from 'voltclaw';
+
+const agent = VoltClawAgent.builder()
+  .withLLM(l => l.ollama().model('llama3.2'))
+  .withTransport(t => t.nostr().relays('wss://relay.damus.io'))
+  .withDelegation(d => d.maxDepth(4).maxCalls(25).budget(0.75))
+  .build();
+```
+
+## Project Structure
+
+```
+voltclaw/
+├── packages/
+│   ├── voltclaw/           # Core agent library
+│   ├── @voltclaw/nostr/    # Nostr transport
+│   ├── @voltclaw/llm/      # LLM providers (Ollama, OpenAI, Anthropic)
+│   ├── @voltclaw/tools/    # Built-in tools
+│   ├── @voltclaw/memory/   # Persistence layer
+│   ├── @voltclaw/cli/      # Command-line interface
+│   └── @voltclaw/testing/  # Testing utilities
+├── examples/               # Usage examples
+├── test/                   # Test suites
+└── docs/                   # Documentation
+```
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run tests
+pnpm test
+
+# Type check
+pnpm typecheck
+
+# Lint
+pnpm lint
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+VOLTCLAW_LLM_PROVIDER=ollama
+VOLTCLAW_LLM_MODEL=llama3.2
+VOLTCLAW_LLM_URL=http://localhost:11434
+VOLTCLAW_NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol
+VOLTCLAW_DELEGATION_MAX_DEPTH=4
+VOLTCLAW_DELEGATION_MAX_CALLS=25
+VOLTCLAW_DELEGATION_BUDGET_USD=0.75
+```
+
+### Config File
+
+Create `~/.voltclaw/config.json`:
+
+```json
+{
+  "relays": ["wss://relay.damus.io"],
+  "llm": {
+    "provider": "ollama",
+    "model": "llama3.2"
+  },
+  "delegation": {
+    "maxDepth": 4,
+    "maxCalls": 25,
+    "budgetUSD": 0.75
+  }
+}
+```
+
+## Recursive Delegation
+
+VoltClaw's signature feature is recursive self-delegation. When faced with complex tasks, the agent can spawn child instances of itself:
+
+```typescript
+// The agent can call itself recursively
+// Parent: "Build a landing page"
+//   └─ Child: "Research competitors"
+//   └─ Child: "Write copy"
+//   └─ Child: "Design layout"
+// Parent: Synthesizes results into final output
+```
+
+Guardrails keep recursion safe:
+- Maximum depth (default: 4)
+- Maximum calls (default: 25)
+- Budget tracking (default: $0.75)
+- Timeouts (default: 10 minutes)
+
+## License
+
+MIT
+
+## Contributing
+
+Contributions welcome! Please read the contributing guidelines first.

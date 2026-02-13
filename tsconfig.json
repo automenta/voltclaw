@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "baseUrl": ".",
+    "paths": {
+      "voltclaw": ["packages/voltclaw/src"],
+      "@voltclaw/nostr": ["packages/@voltclaw/nostr/src"],
+      "@voltclaw/llm": ["packages/@voltclaw/llm/src"],
+      "@voltclaw/memory": ["packages/@voltclaw/memory/src"],
+      "@voltclaw/tools": ["packages/@voltclaw/tools/src"],
+      "@voltclaw/testing": ["packages/@voltclaw/testing/src"],
+      "@voltclaw/cli": ["packages/@voltclaw/cli/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "examples", "test", "test-integration.ts", "voltclaw.ts"]
+}

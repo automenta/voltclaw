@@ -1,0 +1,31 @@
+{
+  "name": "voltclaw",
+  "version": "1.0.0",
+  "description": "Core VoltClaw agent library - recursive autonomous agent platform",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["agent", "ai", "llm", "recursive", "autonomous"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "nostr-tools": "^2.23.1",
+    "nostr-relaypool": "^0.6.30",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  }
+}

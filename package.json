@@ -1,25 +1,30 @@
 {
-  "name": "voltclaw",
+  "name": "voltclaw-monorepo",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "VoltClaw - Recursive autonomous agent platform for TypeScript",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc --build tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist packages/*/dist packages/@voltclaw/*/dist"
   },
-  "keywords": [],
+  "keywords": ["agent", "ai", "llm", "nostr", "recursive", "autonomous"],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@nostr-relay/core": "^0.0.40",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
     "@types/node": "^25.2.3",
-    "@types/ws": "^8.18.1",
-    "mini-debounce": "^1.0.8",
-    "nostr-relaypool": "^0.6.30",
-    "nostr-tools": "^2.23.1",
-    "tsx": "^4.21.0",
+    "eslint": "^9.18.0",
     "typescript": "^5.9.3",
-    "websocket-relay": "^0.3.3",
-    "ws": "^8.19.0"
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^3.0.0"
+  },
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

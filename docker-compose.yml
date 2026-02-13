@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  voltclaw:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/.voltclaw:/home/node/.voltclaw
+    environment:
+      - VOLTCLAW_LOG_LEVEL=debug
+    depends_on:
+      - ollama
+  
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+  
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    profiles:
+      - redis
+
+volumes:
+  ollama-data:
