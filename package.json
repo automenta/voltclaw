@@ -1,0 +1,25 @@
+{
+  "name": "voltclaw",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@nostr-relay/core": "^0.0.40",
+    "@types/node": "^25.2.3",
+    "@types/ws": "^8.18.1",
+    "mini-debounce": "^1.0.8",
+    "nostr-relaypool": "^0.6.30",
+    "nostr-tools": "^2.23.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "websocket-relay": "^0.3.3",
+    "ws": "^8.19.0"
+  }
+}
