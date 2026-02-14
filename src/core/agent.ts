@@ -527,15 +527,16 @@ Parent context: ${contextSummary}${mustFinish}`;
     session: Session,
     from: string
   ): Promise<ToolCallResult> {
-    const tool = this.tools.get(name);
-    if (!tool) {
-      return { error: `Tool not found: ${name}` };
-    }
-
     try {
       if (name === 'delegate') {
         return await this.executeDelegate(args, session, from);
       }
+      
+      const tool = this.tools.get(name);
+      if (!tool) {
+        return { error: `Tool not found: ${name}` };
+      }
+
       const result = await tool.execute(args);
       return result as ToolCallResult;
     } catch (error) {
@@ -597,8 +598,13 @@ Parent context: ${contextSummary}${mustFinish}`;
       .filter(name => {
         const tool = this.tools.get(name);
         return tool && (tool.maxDepth ?? Infinity) >= depth;
-      })
-      .join(', ');
+      });
+    
+    if (depth < this.maxDepth) {
+      toolNames.push('delegate');
+    }
+    
+    const toolNamesStr = toolNames.join(', ');
 
     let template = this.systemPromptTemplate;
     if (!template) {
@@ -636,14 +642,32 @@ You are persistent, efficient, and recursive.`;
         .replace('{depth}', String(depth))
         .replace('{maxDepth}', String(this.maxDepth))
         .replace('{budget}', String(this.budgetUSD))
-        .replace('{tools}', toolNames)
+        .replace('{tools}', toolNamesStr)
         .replace('{depthWarning}', depthWarning);
   }
 
-  private getToolDefinitions(depth: number): Array<{ name: string; description: string }> {
-    return Array.from(this.tools.entries())
-      .filter(([_, tool]) => (tool.maxDepth ?? Infinity) >= depth)
-      .map(([name, tool]) => ({ name, description: tool.description }));
+  private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {
+    const definitions: Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> = 
+      Array.from(this.tools.entries())
+        .filter(([_, tool]) => (tool.maxDepth ?? Infinity) >= depth)
+        .map(([name, tool]) => ({ name, description: tool.description, parameters: tool.parameters }));
+    
+    if (depth < this.maxDepth) {
+      definitions.push({
+        name: 'delegate',
+        description: 'Delegate a sub-task to a child agent instance. Use for complex tasks that can be parallelized or decomposed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            task: { type: 'string', description: 'The specific task to delegate to the child agent' },
+            summary: { type: 'string', description: 'Optional context summary for the child agent' }
+          },
+          required: ['task']
+        }
+      });
+    }
+    
+    return definitions;
   }
 
   private pruneHistory(session: Session): void {
