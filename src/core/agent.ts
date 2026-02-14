@@ -71,6 +71,7 @@ export class VoltClawAgent {
   private readonly circuitBreakers: Map<string, CircuitBreaker> = new Map();
   private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly retrier: Retrier;
+  private readonly fallbacks: Record<string, string>;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -122,6 +123,8 @@ export class VoltClawAgent {
       jitterFactor: DEFAULT_RETRY_JITTER
     };
     this.retrier = new Retrier(retryConfig);
+
+    this.fallbacks = options.fallbacks ?? {};
 
     if (options.tools) {
       this.registerTools(options.tools);
@@ -727,7 +730,18 @@ Parent context: ${contextSummary}${mustFinish}`;
       }
 
       const cb = this.getCircuitBreaker(name);
-      const result = await cb.execute(() => this.retrier.execute(() => tool.execute(args)));
+      const fallbackName = this.fallbacks[name];
+      const fallback = fallbackName
+        ? () => this.executeTool(fallbackName, args, session, from).then(r => {
+             if (r.error) throw new Error(r.error);
+             return r;
+           })
+        : undefined;
+
+      const result = await cb.execute(
+        () => this.retrier.execute(() => tool.execute(args)),
+        fallback
+      );
       return result as ToolCallResult;
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };

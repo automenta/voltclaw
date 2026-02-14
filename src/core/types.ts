@@ -13,6 +13,7 @@ export interface VoltClawAgentOptions {
   plugins?: (string | import('./plugin.js').VoltClawPlugin)[];
   circuitBreaker?: CircuitBreakerConfig;
   retry?: RetryConfig;
+  fallbacks?: Record<string, string>;
 }
 
 export interface RetryConfig {
