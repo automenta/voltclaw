@@ -12,6 +12,14 @@ export interface VoltClawAgentOptions {
   interactive?: boolean;
   plugins?: (string | import('./plugin.js').VoltClawPlugin)[];
   circuitBreaker?: CircuitBreakerConfig;
+  retry?: RetryConfig;
+}
+
+export interface RetryConfig {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitterFactor?: number;
 }
 
 export interface CircuitBreakerConfig {

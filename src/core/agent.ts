@@ -7,6 +7,7 @@ import { FileStore } from '../memory/index.js';
 import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
+import { Retrier } from './retry.js';
 
 import type {
   VoltClawAgentOptions,
@@ -29,7 +30,8 @@ import type {
   LLMConfig,
   ChannelConfig,
   PersistenceConfig,
-  CircuitBreakerConfig
+  CircuitBreakerConfig,
+  RetryConfig
 } from './types.js';
 import {
   VoltClawError,
@@ -48,6 +50,10 @@ const DEFAULT_MAX_HISTORY = 60;
 const DEFAULT_PRUNE_INTERVAL = 300000;
 const DEFAULT_CB_THRESHOLD = 5;
 const DEFAULT_CB_RESET_MS = 60000;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_BASE_DELAY = 1000;
+const DEFAULT_RETRY_MAX_DELAY = 10000;
+const DEFAULT_RETRY_JITTER = 0.1;
 
 interface AgentState {
   isRunning: boolean;
@@ -64,6 +70,7 @@ export class VoltClawAgent {
   private readonly tools: Map<string, Tool> = new Map();
   private readonly circuitBreakers: Map<string, CircuitBreaker> = new Map();
   private readonly circuitBreakerConfig: CircuitBreakerConfig;
+  private readonly retrier: Retrier;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -107,6 +114,14 @@ export class VoltClawAgent {
       failureThreshold: DEFAULT_CB_THRESHOLD,
       resetTimeoutMs: DEFAULT_CB_RESET_MS
     };
+
+    const retryConfig: RetryConfig = options.retry ?? {
+      maxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
+      baseDelayMs: DEFAULT_RETRY_BASE_DELAY,
+      maxDelayMs: DEFAULT_RETRY_MAX_DELAY,
+      jitterFactor: DEFAULT_RETRY_JITTER
+    };
+    this.retrier = new Retrier(retryConfig);
 
     if (options.tools) {
       this.registerTools(options.tools);
@@ -325,9 +340,9 @@ export class VoltClawAgent {
     ];
 
     const cb = this.getCircuitBreaker('llm');
-    let response = await cb.execute(() => this.llm.chat(messages, {
+    let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    }));
+    })));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -346,9 +361,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await cb.execute(() => this.llm.chat(messages, {
+      response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      }));
+      })));
     }
 
     const reply = response.content || '[error]';
@@ -524,9 +539,9 @@ export class VoltClawAgent {
     ];
 
     const cb = this.getCircuitBreaker('llm');
-    let response = await cb.execute(() => this.llm.chat(messages, {
+    let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    }));
+    })));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -544,9 +559,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await cb.execute(() => this.llm.chat(messages, {
+      response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      }));
+      })));
     }
 
     const reply = response.content || '[error]';
@@ -600,9 +615,9 @@ Parent context: ${contextSummary}${mustFinish}`;
 
     try {
       const cb = this.getCircuitBreaker('llm');
-      const response = await cb.execute(() => this.llm.chat(messages, {
+      const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(depth)
-      }));
+      })));
       
       const result = response.content || '[no content]';
       await this.channel.send(
@@ -677,7 +692,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     ];
 
     const cb = this.getCircuitBreaker('llm');
-    const response = await cb.execute(() => this.llm.chat(messages)).catch(() => ({
+    const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages))).catch(() => ({
       content: 'Synthesis failed. Raw results:\n' + results
     }));
 
@@ -712,7 +727,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       }
 
       const cb = this.getCircuitBreaker(name);
-      const result = await cb.execute(() => tool.execute(args));
+      const result = await cb.execute(() => this.retrier.execute(() => tool.execute(args)));
       return result as ToolCallResult;
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
@@ -1201,32 +1216,20 @@ class CallBuilder {
   }
 }
 
+/**
+ * @deprecated Use Retrier class instead
+ */
 async function withRetry<T>(
   fn: () => Promise<T>,
   options: { maxAttempts: number; baseDelayMs: number; maxDelayMs: number }
 ): Promise<T> {
-  let lastError: Error | undefined;
-
-  for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      if (attempt === options.maxAttempts || !isRetryable(error)) {
-        throw lastError;
-      }
-
-      const delay = Math.min(
-        options.baseDelayMs * Math.pow(2, attempt - 1),
-        options.maxDelayMs
-      );
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError ?? new Error('Retry failed');
+  const retrier = new Retrier({
+    maxAttempts: options.maxAttempts,
+    baseDelayMs: options.baseDelayMs,
+    maxDelayMs: options.maxDelayMs,
+    jitterFactor: 0
+  });
+  return retrier.execute(fn);
 }
 
 export { withRetry };

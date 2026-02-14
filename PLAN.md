@@ -18,18 +18,18 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
 
 ### 1.1 Error Handling & Recovery System
 
-- [ ] **Circuit Breaker Pattern**
+- [x] **Circuit Breaker Pattern**
   - Implement `CircuitBreaker` class with states: CLOSED, OPEN, HALF_OPEN
   - Configurable failure thresholds and recovery timeouts
   - Per-tool and per-provider circuit breakers
   - Automatic fallback mechanisms when circuits open
-  - Circuit state persistence across restarts
+  - Circuit state persistence across restarts (Pending)
 
-- [ ] **Retry with Intelligence**
+- [x] **Retry with Intelligence**
   - Exponential backoff with jitter
   - Retry classification (retryable vs non-retryable errors)
   - Per-operation retry budgets
-  - Smart retry using agent reasoning for ambiguous failures
+  - Smart retry using agent reasoning for ambiguous failures (Pending)
 
 - [ ] **Graceful Degradation**
   - Fallback tool implementations (e.g., local file search if grep fails)
