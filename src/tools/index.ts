@@ -5,6 +5,10 @@ import { createDelegateTool, estimateTokens, estimateTokensTool, type DelegateTo
 import { httpGetTool, httpPostTool } from './http.js';
 import { readFileTool, writeFileTool, listFilesTool } from './files.js';
 import { restartTool } from './restart.js';
+import { grepTool } from './grep.js';
+import { globTool } from './glob.js';
+import { editTool } from './edit.js';
+import { executeTool } from './execute.js';
 import { createAllTools } from './loader.js';
 
 export { ToolRegistry, type ToolExecutor };
@@ -14,6 +18,7 @@ export { createDelegateTool, estimateTokens, estimateTokensTool, type DelegateTo
 export { httpGetTool, httpPostTool };
 export { readFileTool, writeFileTool, listFilesTool };
 export { restartTool };
+export { grepTool, globTool, editTool, executeTool };
 export { createAllTools };
 
 export function createBuiltinTools(): Tool[] {
@@ -27,6 +32,10 @@ export function createBuiltinTools(): Tool[] {
     readFileTool,
     writeFileTool,
     listFilesTool,
-    restartTool
+    restartTool,
+    grepTool,
+    globTool,
+    editTool,
+    executeTool
   ];
 }

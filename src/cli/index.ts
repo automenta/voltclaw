@@ -276,19 +276,8 @@ async function oneShotQuery(
   });
 
   if (options.verbose) {
-    // We need to cast 'tool_call' because it's not strictly typed in EventMap yet or I need to check types.
-    // However, VoltClawAgent uses emit('tool_call')?
-    // Checking agent.ts, it doesn't emit tool_call. It emits message, reply, delegation, error.
-    // Wait, PLAN.md suggested logging tool calls.
-    // src/core/agent.ts does NOT emit tool_call.
-    // I should check if I missed adding tool_call emission in agent.ts or if the plan was aspirational.
-    // In agent.ts:
-    // messages.push({ role: 'tool', ... })
-    // It does not emit an event.
-    // So I can't easily hook into tool calls without modifying agent.ts further.
-    // For now I will stick to what is available or skip tool call logging if not supported.
-    // I will skip tool call logging for now as it requires modifying agent.ts which is not in this step (strictly speaking, but I could have added it).
-    // Let's stick to delegation logging which IS supported via onDelegation hook.
+    // Tool call logging can be implemented here if the agent emits 'tool_call' events.
+    // Currently, only 'delegation' events are emitted.
   }
 
   await agent.start();
