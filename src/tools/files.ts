@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 
 import type { Tool, ToolCallResult } from './types.js';
+import { formatToolError } from './errors.js';
 
 const FileSchema = z.object({
   path: z.string().describe('The path to the file')
@@ -28,7 +29,7 @@ export const readFileTool: Tool = {
       const content = await readFile(filePath, 'utf-8');
       return { content };
     } catch (error) {
-      return { error: String(error) };
+      return { error: formatToolError('read_file', error, args) };
     }
   }
 };
@@ -50,7 +51,7 @@ export const writeFileTool: Tool = {
       await writeFile(filePath, content, 'utf-8');
       return { status: 'success', path: filePath };
     } catch (error) {
-      return { error: String(error) };
+      return { error: formatToolError('write_file', error, args) };
     }
   }
 };
@@ -71,7 +72,7 @@ export const listFilesTool: Tool = {
       const files = await fs.readdir(dirPath);
       return { files };
     } catch (error) {
-      return { error: String(error) };
+      return { error: formatToolError('list_files', error, args) };
     }
   }
 };
