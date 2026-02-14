@@ -39,6 +39,19 @@ This file contains meta-instructions for the agent.
 3. Write modular code.
 `;
 
+export const DEFAULT_TOOLS_MD = `# Tool Notes
+
+Use this file to store notes about tools, scripts, or specific commands that are useful in this environment.
+The agent can read this file to understand better how to use available tools.
+`;
+
+export const DEFAULT_IDENTITY_MD = `# Identity
+
+Name: VoltClaw
+Emoji: 🦞
+Vibe: Recursive, Efficient, Autonomous.
+`;
+
 export class Workspace {
   private workspaceDir: string;
 
@@ -52,6 +65,8 @@ export class Workspace {
     await this.ensureFile('SOUL.md', DEFAULT_SOUL);
     await this.ensureFile('USER.md', DEFAULT_USER);
     await this.ensureFile('AGENTS.md', DEFAULT_AGENTS_MD);
+    await this.ensureFile('TOOLS.md', DEFAULT_TOOLS_MD);
+    await this.ensureFile('IDENTITY.md', DEFAULT_IDENTITY_MD);
   }
 
   private async ensureFile(filename: string, content: string): Promise<void> {
@@ -80,11 +95,13 @@ export class Workspace {
     const soul = await this.loadFile('SOUL.md');
     const user = await this.loadFile('USER.md');
     const agents = await this.loadFile('AGENTS.md');
+    const tools = await this.loadFile('TOOLS.md');
 
     return [
       soul ? `\n\n--- AGENT SOUL ---\n${soul}` : '',
       user ? `\n\n--- USER PROFILE ---\n${user}` : '',
-      agents ? `\n\n--- AGENT INSTRUCTIONS ---\n${agents}` : ''
+      agents ? `\n\n--- AGENT INSTRUCTIONS ---\n${agents}` : '',
+      tools ? `\n\n--- TOOL NOTES ---\n${tools}` : ''
     ].join('');
   }
 
