@@ -15,7 +15,7 @@ export interface CLIConfig {
     baseUrl?: string;
     apiKey?: string;
   };
-  delegation: {
+  call: {
     maxDepth: number;
     maxCalls: number;
     budgetUSD: number;
@@ -33,7 +33,7 @@ const defaultConfig: CLIConfig = {
     provider: 'ollama',
     model: 'llama3.2'
   },
-  delegation: {
+  call: {
     maxDepth: 4,
     maxCalls: 25,
     budgetUSD: 0.75,

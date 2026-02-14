@@ -2,12 +2,13 @@ export interface VoltClawAgentOptions {
   llm?: LLMProvider | LLMConfig;
   transport?: Transport | TransportConfig;
   persistence?: Store | PersistenceConfig;
-  delegation?: DelegationConfig;
+  call?: CallConfig;
   history?: HistoryConfig;
   tools?: Tool[] | ToolsConfig;
   hooks?: HooksConfig;
   middleware?: Middleware[];
   logger?: Logger | LoggerConfig;
+  interactive?: boolean;
 }
 
 export interface LLMConfig {
@@ -34,7 +35,7 @@ export interface PersistenceConfig {
   path?: string;
 }
 
-export interface DelegationConfig {
+export interface CallConfig {
   maxDepth?: number;
   maxCalls?: number;
   budgetUSD?: number;
@@ -54,8 +55,11 @@ export interface ToolsConfig {
 export interface HooksConfig {
   onMessage?: (ctx: MessageContext) => Promise<void>;
   onReply?: (ctx: ReplyContext) => Promise<void>;
-  onDelegation?: (ctx: DelegationContext) => Promise<void>;
+  onCall?: (ctx: CallContext) => Promise<void>;
   onError?: (ctx: ErrorContext) => Promise<void>;
+  onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
+  onStart?: () => Promise<void>;
+  onStop?: () => Promise<void>;
 }
 
 export interface LoggerConfig {
@@ -77,7 +81,7 @@ export interface ReplyContext {
   inReplyTo?: string;
 }
 
-export interface DelegationContext {
+export interface CallContext {
   taskId: string;
   task: string;
   depth: number;
@@ -120,7 +124,7 @@ export type Unsubscribe = () => void;
 export type EventMap = {
   message: [MessageContext];
   reply: [ReplyContext];
-  delegation: [DelegationContext];
+  call: [CallContext];
   error: [ErrorContext];
   start: [];
   stop: [];
@@ -144,7 +148,14 @@ export interface LLMProvider {
   readonly model: string;
   readonly supportsTools?: boolean;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
+  stream?(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk>;
   countTokens?(text: string): number;
+}
+
+export interface ChatChunk {
+  content?: string;
+  toolCalls?: Partial<ToolCall>;
+  done?: boolean;
 }
 
 export interface ChatOptions {
@@ -201,7 +212,7 @@ export interface Store {
 
 export interface Session {
   history: ChatMessage[];
-  delegationCount: number;
+  callCount: number;
   estCostUSD: number;
   actualTokensUsed: number;
   subTasks: Record<string, SubTaskInfo>;

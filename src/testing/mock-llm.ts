@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, ChatOptions, ToolCall } from 'voltclaw';
+import type { ChatMessage, ChatResponse, ChatOptions, ToolCall } from '../core/types.js';
 
 export interface MockLLMConfig {
   responses?: Record<string, string>;
@@ -94,11 +94,11 @@ export class MockLLM {
         };
       }
       
-      if (tool.name === 'delegate' && (lowerContent.includes('delegate') || lowerContent.includes('subtask'))) {
+      if (tool.name === 'call' && (lowerContent.includes('call') || lowerContent.includes('subtask'))) {
         return {
           id: `tc_${Date.now()}`,
-          name: 'delegate',
-          arguments: { task: 'Mock delegated task' }
+          name: 'call',
+          arguments: { task: 'Mock called task' }
         };
       }
     }

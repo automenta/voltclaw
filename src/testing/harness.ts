@@ -1,13 +1,13 @@
-import { VoltClawAgent, type VoltClawAgentOptions, type LLMProvider, type Transport, type Store, type Session, type Tool, type ChatMessage, type ChatResponse, type ChatOptions, type Unsubscribe, type MessageMeta } from 'voltclaw';
+import { VoltClawAgent, type VoltClawAgentOptions, type LLMProvider, type Transport, type Store, type Session, type Tool, type ChatMessage, type ChatResponse, type ChatOptions, type Unsubscribe, type MessageMeta } from '../core/index.js';
 import { MockRelay, MockClient } from './mock-relay.js';
 import { MockLLM, createMockLLM, type MockLLMConfig } from './mock-llm.js';
-import { generateSecretKey, getPublicKey, finalizeEvent, nip04 } from 'nostr-tools';
+import { getPublicKey, finalizeEvent, nip04 } from 'nostr-tools';
 import { RelayPool } from 'nostr-relaypool';
 
 export interface TestHarnessConfig {
   llm?: MockLLMConfig | MockLLM;
   relayPort?: number;
-  delegation?: VoltClawAgentOptions['delegation'];
+  call?: VoltClawAgentOptions['call'];
 }
 
 export class TestHarness {
@@ -36,7 +36,7 @@ export class TestHarness {
       llm: this.llm,
       transport,
       persistence: store,
-      delegation: config.delegation ?? {
+      call: config.call ?? {
         maxDepth: 2,
         maxCalls: 5,
         budgetUSD: 0.50
@@ -57,7 +57,7 @@ export class TestHarness {
     await this.relay.start();
     await this.agent.start();
     await this.client.connect(this.relay.url);
-    this.client.subscribe();
+    await this.client.subscribe();
     
     this.isRunning = true;
   }
@@ -72,6 +72,10 @@ export class TestHarness {
     this.isRunning = false;
   }
 
+  async query(message: string): Promise<string> {
+      return this.agent.query(message);
+  }
+
   async send(message: string): Promise<string> {
     await this.client.sendDM(this.agentPubkey, message);
     const reply = await this.client.waitForDM(60000);
@@ -80,6 +84,12 @@ export class TestHarness {
 
   get callCount(): number {
     return this.llm.getCallCount();
+  }
+
+  get delegationCount(): number {
+      // Compatibility alias if tests check this
+      const session = this.agent['store'].get('self', true);
+      return session.callCount;
   }
 
   get events() {
@@ -109,9 +119,7 @@ function createNostrTransport(relayUrl: string, secretKey: Uint8Array): Transpor
       eventHandlers.get('connected')?.forEach(h => h());
     },
     async stop() {
-      for (const relay of pool.relayByUrl.keys()) {
-        pool.removeRelay(relay);
-      }
+      // Simple stop mock
     },
     async send(to: string, content: string) {
       const encrypted = await nip04.encrypt(secretKey, to, content);
@@ -153,7 +161,7 @@ function createMemoryStore(): Store {
       if (!data[key]) {
         data[key] = {
           history: [],
-          delegationCount: 0,
+          callCount: 0,
           estCostUSD: 0,
           actualTokensUsed: 0,
           subTasks: {},

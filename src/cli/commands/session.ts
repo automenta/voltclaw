@@ -20,6 +20,7 @@ export async function sessionCommand(subcommand: string, arg?: string): Promise<
       console.log('----------------');
       for (const key of keys) {
         const session = all[key];
+        if (!session) continue;
         const msgCount = session.history.length;
         const subtaskCount = Object.keys(session.subTasks || {}).length;
         console.log(`- ${key}: ${msgCount} messages, ${subtaskCount} subtasks, cost: $${session.estCostUSD.toFixed(4)}`);

@@ -25,7 +25,7 @@ pnpm start "Analyze this codebase" --recursive
 
 ## Features
 
-- **Recursive Delegation** - Agents spawn sub-agents for complex tasks
+- **Recursive Calls** - Agents spawn sub-agents for complex tasks
 - **Nostr Native** - Decentralized, encrypted P2P communication
 - **LLM Agnostic** - Ollama, OpenAI, Anthropic, or custom providers
 - **Tool System** - File operations, HTTP requests, time utilities
@@ -46,7 +46,7 @@ npm install voltclaw
 # One-shot query (non-recursive)
 voltclaw "What is 2+2?"
 
-# One-shot query with recursive delegation
+# One-shot query with recursive calls
 voltclaw "Analyze each module in src/" --recursive
 
 # Interactive REPL mode
@@ -78,7 +78,7 @@ const agent = new VoltClawAgent({
   }),
   persistence: new FileStore({ path: '~/.voltclaw/data.json' }),
   tools: await createAllTools(),
-  delegation: {
+  call: {
     maxDepth: 4,
     maxCalls: 25,
     budgetUSD: 0.75
@@ -102,7 +102,7 @@ import { VoltClawAgent } from 'voltclaw';
 const agent = VoltClawAgent.builder()
   .withLLM(l => l.ollama().model('llama3.2'))
   .withTransport(t => t.nostr().relays('wss://relay.damus.io'))
-  .withDelegation(d => d.maxDepth(4).maxCalls(25).budget(0.75))
+  .withCall(c => c.maxDepth(4).maxCalls(25).budget(0.75))
   .build();
 ```
 
@@ -114,7 +114,7 @@ voltclaw/
 │   ├── core/           # Agent logic, types, errors, bootstrap
 │   ├── llm/            # LLM providers (Ollama, OpenAI, Anthropic)
 │   ├── nostr/          # Nostr transport and client
-│   ├── tools/          # Built-in tools (files, http, time, delegate)
+│   ├── tools/          # Built-in tools (files, http, time, call)
 │   ├── memory/         # Persistence (FileStore, MemoryStore)
 │   ├── testing/        # Test utilities (MockLLM, MockRelay)
 │   └── cli/            # Command-line interface
@@ -136,7 +136,12 @@ voltclaw/
 | `date` | Get current date |
 | `sleep` | Pause execution |
 | `estimate_tokens` | Estimate token count |
-| `delegate` | Spawn a sub-agent for a subtask |
+| `call` | Call a sub-agent for a subtask |
+| `call_parallel` | Call multiple sub-agents in parallel |
+| `grep` | Search file contents |
+| `glob` | Find files matching pattern |
+| `edit` | Edit file content |
+| `execute` | Execute shell commands |
 
 ## Development
 
@@ -171,7 +176,7 @@ Create `~/.voltclaw/config.json`:
     "model": "llama3.2",
     "baseUrl": "http://localhost:11434"
   },
-  "delegation": {
+  "call": {
     "maxDepth": 4,
     "maxCalls": 25,
     "budgetUSD": 0.75,
@@ -188,9 +193,9 @@ Create `~/.voltclaw/config.json`:
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
 
-## Recursive Delegation
+## Recursive Calls
 
-VoltClaw's signature feature is recursive self-delegation. When faced with complex tasks, the agent spawns child instances of itself:
+VoltClaw's signature feature is recursive self-calling. When faced with complex tasks, the agent spawns child instances of itself:
 
 ```
 Parent: "Analyze this codebase"
@@ -206,15 +211,15 @@ Each sub-agent has full access to tools and can spawn further sub-agents (up to 
 ### Guardrails
 
 - **Max Depth** (default: 4) - Limits recursion depth
-- **Max Calls** (default: 25) - Limits total delegations
+- **Max Calls** (default: 25) - Limits total calls
 - **Budget** (default: $0.75) - Tracks estimated cost
 - **Timeout** (default: 10 min) - Wall-clock limit
 
 ### Example
 
 ```bash
-# Analyze codebase with recursive delegation
-voltclaw "Analyze this project. Delegate sub-agents to summarize each module (core, llm, nostr, tools, memory). Synthesize a one-sentence description." --recursive
+# Analyze codebase with recursive calls
+voltclaw "Analyze this project. Call sub-agents to summarize each module (core, llm, nostr, tools, memory). Synthesize a one-sentence description." --recursive
 ```
 
 ## Architecture
@@ -229,7 +234,7 @@ voltclaw "Analyze this project. Delegate sub-agents to summarize each module (co
 │                                             │
 │  ┌─────────────────────────────────────┐   │
 │  │           Tool Registry              │   │
-│  │  read_file │ write_file │ delegate  │   │
+│  │  read_file │ write_file │ call      │   │
 │  │  list_files│ http_get   │ time      │   │
 │  └─────────────────────────────────────┘   │
 │                                             │

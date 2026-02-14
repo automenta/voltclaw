@@ -11,6 +11,7 @@ import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
 import path from 'path';
+import readline from 'readline';
 
 function createLLMProvider(config: any): LLMProvider {
   switch (config.provider) {
@@ -54,7 +55,8 @@ Commands:
   help                Show this help message
 
 Options:
-  --recursive         Enable recursive delegation for one-shot query
+  --recursive         Enable recursive calls for one-shot query
+  --interactive       Enable interactive tool approval
   --verbose           Enable verbose logging
   --json              Output in JSON format (where applicable)
 `);
@@ -62,7 +64,7 @@ Options:
 
 async function oneShotQuery(
   query: string,
-  options: { recursive: boolean; verbose: boolean; debug: boolean }
+  options: { recursive: boolean; verbose: boolean; debug: boolean; interactive: boolean }
 ): Promise<void> {
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
@@ -78,21 +80,36 @@ async function oneShotQuery(
     llm,
     transport,
     persistence: store,
-    delegation: options.recursive ? config.delegation : { ...config.delegation, maxDepth: 1 },
+    call: options.recursive ? config.call : { ...config.call, maxDepth: 1 },
     tools,
     hooks: {
-       onDelegation: async (ctx) => {
+       onCall: async (ctx) => {
          if (options.recursive) {
            const indicator = options.verbose ? ctx.task.slice(0, 60) : '';
-           console.log(`  → [Depth ${ctx.depth}] Delegating... ${indicator}`);
+           console.log(`  → [Depth ${ctx.depth}] Calling... ${indicator}`);
          }
-       }
+       },
+       onToolApproval: options.interactive ? async (tool, args) => {
+           // Simple check for destructive tools or always ask
+           const DESTRUCTIVE = ['execute', 'write_file', 'edit', 'delete'];
+           if (!DESTRUCTIVE.includes(tool)) return true;
+
+           const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+           return new Promise(resolve => {
+               console.log(`\n⚠️  Tool Approval Required:`);
+               console.log(`   Tool: ${tool}`);
+               console.log(`   Args: ${JSON.stringify(args, null, 2)}`);
+               rl.question(`   Allow execution? [y/N]: `, answer => {
+                   rl.close();
+                   resolve(answer.trim().toLowerCase().startsWith('y'));
+               });
+           });
+       } : undefined
     }
   });
 
   if (options.verbose) {
     // Tool call logging can be implemented here if the agent emits 'tool_call' events.
-    // Currently, only 'delegation' events are emitted.
   }
 
   await agent.start();
@@ -115,6 +132,7 @@ async function run(args: string[]): Promise<void> {
   let recursive = false;
   let verbose = false;
   let debug = false;
+  let interactive = false;
   let json = false;
   const positional: string[] = [];
 
@@ -125,6 +143,8 @@ async function run(args: string[]): Promise<void> {
       verbose = true;
     } else if (arg === '--debug' || arg === '-d') {
       debug = true;
+    } else if (arg === '--interactive' || arg === '-i') {
+      interactive = true;
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -186,7 +206,7 @@ async function run(args: string[]): Promise<void> {
     default:
       // Treat as one-shot query
       const query = positional.join(' ');
-      await oneShotQuery(query, { recursive, verbose, debug });
+      await oneShotQuery(query, { recursive, verbose, debug, interactive });
       break;
   }
 }

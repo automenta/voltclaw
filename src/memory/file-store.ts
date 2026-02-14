@@ -1,4 +1,6 @@
-import type { Store, Session, SubTaskInfo, ChatMessage } from './types.ts';
+import type { Store, Session, SubTaskInfo, ChatMessage } from '../core/types.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 export type { Store, Session, SubTaskInfo, ChatMessage };
 
@@ -17,7 +19,6 @@ export class FileStore implements Store {
 
   async load(): Promise<void> {
     try {
-      const fs = await import('fs/promises');
       const content = await fs.readFile(this.config.path, 'utf-8');
       this.data = JSON.parse(content) as Record<string, Session>;
     } catch {
@@ -27,8 +28,6 @@ export class FileStore implements Store {
 
   async save(): Promise<void> {
     try {
-      const fs = await import('fs/promises');
-      const path = await import('path');
       const dir = path.dirname(this.config.path);
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(this.config.path, JSON.stringify(this.data, null, 2));
@@ -71,7 +70,7 @@ export class FileStore implements Store {
   private createSession(): Session {
     return {
       history: [],
-      delegationCount: 0,
+      callCount: 0,
       estCostUSD: 0,
       actualTokensUsed: 0,
       subTasks: {},

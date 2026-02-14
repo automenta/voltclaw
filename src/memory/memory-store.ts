@@ -1,4 +1,4 @@
-import type { Store, Session, SubTaskInfo, ChatMessage } from './types.ts';
+import type { Store, Session, SubTaskInfo, ChatMessage } from '../core/types.js';
 
 export type { Store, Session, SubTaskInfo, ChatMessage };
 
@@ -46,7 +46,7 @@ export class MemoryStore implements Store {
   private createSession(): Session {
     return {
       history: [],
-      delegationCount: 0,
+      callCount: 0,
       estCostUSD: 0,
       actualTokensUsed: 0,
       subTasks: {},
