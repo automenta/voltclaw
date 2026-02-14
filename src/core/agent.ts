@@ -32,6 +32,7 @@ import {
   ConfigurationError,
   MaxDepthExceededError,
   BudgetExceededError,
+  TimeoutError,
   isRetryable
 } from './errors.js';
 
@@ -479,14 +480,20 @@ Parent context: ${contextSummary}${mustFinish}`;
     const sub = session.subTasks[subId];
     if (!sub) return;
 
+    if (sub.timer) {
+      clearTimeout(sub.timer);
+    }
+
     sub.arrived = true;
     if (parsed.error) {
       sub.error = parsed.error as string;
+      sub.reject?.(new Error(sub.error));
     } else {
       sub.result = parsed.result as string;
       const addedTokens = Math.ceil((sub.result?.length ?? 0) / 4);
       session.actualTokensUsed += addedTokens;
       session.estCostUSD += (addedTokens / 1000) * 0.0005;
+      sub.resolve?.(sub.result);
     }
 
     await this.store.save?.();
@@ -532,6 +539,10 @@ Parent context: ${contextSummary}${mustFinish}`;
         return await this.executeDelegate(args, session, from);
       }
       
+      if (name === 'delegate_parallel') {
+        return await this.executeDelegateParallel(args, session, from);
+      }
+
       const tool = this.tools.get(name);
       if (!tool) {
         return { error: `Tool not found: ${name}` };
@@ -575,7 +586,9 @@ Parent context: ${contextSummary}${mustFinish}`;
     session.subTasks[subId] = {
       createdAt: Date.now(),
       task,
-      arrived: false
+      arrived: false,
+      resolve: undefined,
+      reject: undefined
     };
 
     const payload = JSON.stringify({
@@ -590,7 +603,131 @@ Parent context: ${contextSummary}${mustFinish}`;
     await this.transport.send(this.transport.identity.publicKey, payload);
     await this.store.save?.();
 
-    return { status: 'delegated', subId, depth, estCost: estNewCost };
+    // Wait for result
+    try {
+      const result = await this.waitForSubtaskResult(subId, session);
+      return { status: 'completed', result, subId, depth };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        subId
+      };
+    }
+  }
+
+  private async executeDelegateParallel(
+    args: Record<string, unknown>,
+    session: Session,
+    from: string
+  ): Promise<ToolCallResult> {
+    const tasks = args.tasks as Array<{ task: string; summary?: string }>;
+
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return { error: 'Invalid tasks argument' };
+    }
+
+    // Check depth
+    const depth = session.depth + 1;
+    if (depth > this.maxDepth) {
+      throw new MaxDepthExceededError(this.maxDepth, depth);
+    }
+
+    // Check budget for all tasks
+    let totalEstCost = 0;
+    for (const t of tasks) {
+      const baseEst = ((t.task.length + (t.summary?.length ?? 0)) / 4000) * 0.0005;
+      totalEstCost += baseEst * 3;
+    }
+
+    if (session.estCostUSD + totalEstCost > this.budgetUSD * 0.8) {
+      throw new BudgetExceededError(this.budgetUSD, session.estCostUSD);
+    }
+
+    if (session.delegationCount + tasks.length > this.maxCalls) {
+      return { error: `Max delegations exceeded. Can only delegate ${this.maxCalls - session.delegationCount} more tasks.` };
+    }
+
+    // Execute in parallel (start all, then wait for all)
+    // We reuse logic from executeDelegate but we want to parallelize sending and waiting
+
+    // First, start all subtasks
+    const promises = tasks.map(async (t) => {
+      // Logic duplicated from executeDelegate but without the budget check which we did already
+      // And we need to be careful about session updates being atomic or at least consistent
+      // JS is single threaded so synchronous updates are fine
+
+      session.delegationCount++;
+      // We already checked budget, just update it roughly
+      const baseEst = ((t.task.length + (t.summary?.length ?? 0)) / 4000) * 0.0005;
+      session.estCostUSD += baseEst * 3;
+
+      const subId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      session.subTasks[subId] = {
+        createdAt: Date.now(),
+        task: t.task,
+        arrived: false,
+        resolve: undefined,
+        reject: undefined
+      };
+
+      const payload = JSON.stringify({
+        type: 'subtask',
+        parentPubkey: from,
+        subId,
+        task: t.task,
+        contextSummary: t.summary ?? '',
+        depth
+      });
+
+      await this.transport.send(this.transport.identity.publicKey, payload);
+
+      // Wait for result
+      try {
+        const result = await this.waitForSubtaskResult(subId, session);
+        return { status: 'completed', result, subId, task: t.task };
+      } catch (error) {
+        return {
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+          subId,
+          task: t.task
+        };
+      }
+    });
+
+    await this.store.save?.();
+
+    const results = await Promise.all(promises);
+    // Explicitly return a ToolCallResult compatible object (Record<string, unknown>)
+    return { status: 'completed', results: results as unknown as Record<string, unknown> };
+  }
+
+  private async waitForSubtaskResult(
+    subId: string,
+    session: Session,
+    timeoutMs: number = this.timeoutMs
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sub = session.subTasks[subId];
+      if (!sub) {
+        reject(new Error(`Subtask ${subId} not found`));
+        return;
+      }
+
+      // Store resolvers for handleSubtaskResult to call
+      sub.resolve = resolve;
+      sub.reject = reject;
+
+      // Timeout
+      const timer = setTimeout(() => {
+        sub.arrived = true;
+        sub.error = `Timeout after ${timeoutMs}ms`;
+        reject(new TimeoutError(timeoutMs, `Subtask ${subId} timed out`));
+      }, timeoutMs);
+
+      // Store timer for cleanup
+      sub.timer = timer;
+    });
   }
 
   private buildSystemPrompt(depth: number): string {
@@ -663,6 +800,28 @@ You are persistent, efficient, and recursive.`;
             summary: { type: 'string', description: 'Optional context summary for the child agent' }
           },
           required: ['task']
+        }
+      });
+      definitions.push({
+        name: 'delegate_parallel',
+        description: 'Delegate multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tasks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  task: { type: 'string' },
+                  summary: { type: 'string' }
+                },
+                required: ['task']
+              },
+              description: 'List of tasks to delegate in parallel (max 10)'
+            }
+          },
+          required: ['tasks']
         }
       });
     }

@@ -215,6 +215,9 @@ export interface SubTaskInfo {
   arrived: boolean;
   result?: string;
   error?: string;
+  resolve?: (value: string) => void;
+  reject?: (error: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 export interface Tool {
@@ -238,6 +241,7 @@ export interface ToolParameterProperty {
   enum?: string[];
   items?: ToolParameterProperty;
   properties?: Record<string, ToolParameterProperty>;
+  required?: string[];
 }
 
 export interface ToolDefinition {

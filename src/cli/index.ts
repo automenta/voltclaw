@@ -1,86 +1,18 @@
 #!/usr/bin/env node
 
 import { VoltClawAgent, type LLMProvider } from '../core/index.js';
-import type { MessageContext, ReplyContext, ErrorContext } from '../core/index.js';
-import { NostrClient, generateNewKeyPair, resolveToHex } from '../nostr/index.js';
+import { NostrClient } from '../nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { FileStore } from '../memory/index.js';
 import { createAllTools } from '../tools/index.js';
-import fs from 'fs/promises';
+import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR } from './config.js';
+import { startCommand } from './commands/start.js';
+import { dmCommand } from './commands/dm.js';
+import { healthCommand } from './commands/health.js';
+import { sessionCommand } from './commands/session.js';
 import path from 'path';
-import os from 'os';
-import readline from 'readline';
-import { fileURLToPath } from 'url';
 
-const VOLTCLAW_DIR = path.join(os.homedir(), '.voltclaw');
-const CONFIG_FILE = path.join(VOLTCLAW_DIR, 'config.json');
-const KEYS_FILE = path.join(VOLTCLAW_DIR, 'keys.json');
-
-// --- Types ---
-interface CLIConfig {
-  relays: string[];
-  llm: {
-    provider: 'ollama' | 'openai' | 'anthropic';
-    model: string;
-    baseUrl?: string;
-    apiKey?: string;
-  };
-  delegation: {
-    maxDepth: number;
-    maxCalls: number;
-    budgetUSD: number;
-    timeoutMs: number;
-  };
-}
-
-const defaultConfig: CLIConfig = {
-  relays: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band'
-  ],
-  llm: {
-    provider: 'ollama',
-    model: 'llama3.2'
-  },
-  delegation: {
-    maxDepth: 4,
-    maxCalls: 25,
-    budgetUSD: 0.75,
-    timeoutMs: 600000
-  }
-};
-
-// --- Helpers ---
-async function loadConfig(): Promise<CLIConfig> {
-  try {
-    const content = await fs.readFile(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(content) as Partial<CLIConfig>;
-    return { ...defaultConfig, ...config };
-  } catch {
-    return defaultConfig;
-  }
-}
-
-async function loadOrGenerateKeys(): Promise<{ publicKey: string; secretKey: string }> {
-  try {
-    const content = await fs.readFile(KEYS_FILE, 'utf-8');
-    return JSON.parse(content) as { publicKey: string; secretKey: string };
-  } catch {
-    const keys = await generateNewKeyPair();
-    await fs.mkdir(VOLTCLAW_DIR, { recursive: true });
-    await fs.writeFile(KEYS_FILE, JSON.stringify({
-      publicKey: keys.publicKey,
-      secretKey: keys.secretKey
-    }, null, 2));
-    console.log(`New identity created.`);
-    console.log(`npub: ${keys.npub}`);
-    console.log(`nsec: ${keys.nsec} (backup securely!)`);
-    return { publicKey: keys.publicKey, secretKey: keys.secretKey };
-  }
-}
-
-function createLLMProvider(config: CLIConfig['llm']): LLMProvider {
+function createLLMProvider(config: any): LLMProvider {
   switch (config.provider) {
     case 'ollama':
       return new OllamaProvider({
@@ -115,137 +47,23 @@ Commands:
   repl                Start interactive REPL (alias for start with interaction)
   config [key] [val]  View or edit configuration
   keys                Show current identity
+  dm <npub> <msg>     Send a direct message
+  health              Run system health checks
+  session [cmd]       Manage sessions (list, show, clear, prune)
   version             Show version info
   help                Show this help message
 
 Options:
   --recursive         Enable recursive delegation for one-shot query
+  --verbose           Enable verbose logging
+  --json              Output in JSON format (where applicable)
 `);
 }
 
-// --- Commands ---
-
-async function startCommand(interactive: boolean = false): Promise<void> {
-  const config = await loadConfig();
-  const keys = await loadOrGenerateKeys();
-
-  console.log('Starting VoltClaw agent...');
-  console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
-
-  const llm = createLLMProvider(config.llm);
-  const transport = new NostrClient({
-    relays: config.relays,
-    privateKey: keys.secretKey
-  });
-  const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
-  const tools = await createAllTools();
-
-  const agent = new VoltClawAgent({
-    llm,
-    transport,
-    persistence: store,
-    delegation: config.delegation,
-    tools,
-    hooks: {
-      onMessage: async (ctx: MessageContext) => {
-        if (!interactive) {
-          console.log(`[${new Date().toISOString()}] Message from ${ctx.from.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
-        }
-      },
-      onReply: async (ctx: ReplyContext) => {
-        if (!interactive) {
-          console.log(`[${new Date().toISOString()}] Reply to ${ctx.to.slice(0, 8)}: ${ctx.content.slice(0, 100)}...`);
-        }
-      },
-      onError: async (ctx: ErrorContext) => {
-        console.error(`[${new Date().toISOString()}] Error:`, ctx.error.message);
-      }
-    }
-  });
-
-  // Set source dir for self-improvement
-  process.env.VOLTCLAW_SOURCE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-  await agent.start();
-
-  if (interactive) {
-    console.log('Interactive REPL mode. Type your query below.');
-    console.log('Type "exit" to quit.');
-
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: '> '
-    });
-
-    rl.prompt();
-
-    rl.on('line', async (line) => {
-      const query = line.trim();
-      if (query === 'exit') {
-        rl.close();
-        return;
-      }
-      if (query) {
-        try {
-          const response = await agent.query(query);
-          console.log(response);
-        } catch (error) {
-          console.error('Error:', error);
-        }
-      }
-      rl.prompt();
-    });
-
-    rl.on('close', async () => {
-      console.log('\nShutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-
-  } else {
-    console.log('VoltClaw agent is running. Press Ctrl+C to stop.');
-    // Keep process alive
-    return new Promise(() => {
-      process.on('SIGINT', async () => {
-          console.log('\nShutting down...');
-          await agent.stop();
-          process.exit(0);
-      });
-    });
-  }
-}
-
-async function dmCommand(to: string, message: string): Promise<void> {
-  const config = await loadConfig();
-  const keys = await loadOrGenerateKeys();
-  const transport = new NostrClient({
-    relays: config.relays,
-    privateKey: keys.secretKey
-  });
-
-  try {
-    const hexKey = resolveToHex(to);
-    console.log(`Connecting to relays...`);
-    await transport.start();
-
-    // Allow some time for connection
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    console.log(`Sending DM to ${hexKey.slice(0, 8)}...`);
-    await transport.send(hexKey, message);
-    console.log('Message sent.');
-
-    // Allow some time for publish
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  } catch (error) {
-    console.error('Failed to send DM:', error);
-  } finally {
-    await transport.stop();
-  }
-}
-
-async function oneShotQuery(query: string, recursive: boolean): Promise<void> {
+async function oneShotQuery(
+  query: string,
+  options: { recursive: boolean; verbose: boolean; debug: boolean }
+): Promise<void> {
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
   const llm = createLLMProvider(config.llm);
@@ -260,20 +78,29 @@ async function oneShotQuery(query: string, recursive: boolean): Promise<void> {
     llm,
     transport,
     persistence: store,
-    delegation: recursive ? config.delegation : { ...config.delegation, maxDepth: 1 },
+    delegation: options.recursive ? config.delegation : { ...config.delegation, maxDepth: 1 },
     tools,
     hooks: {
        onDelegation: async (ctx) => {
-         if (recursive) console.log(`[Delegation] ${ctx.task} (depth ${ctx.depth})`);
+         if (options.recursive) {
+           const indicator = options.verbose ? ctx.task.slice(0, 60) : '';
+           console.log(`  → [Depth ${ctx.depth}] Delegating... ${indicator}`);
+         }
        }
     }
   });
 
+  if (options.verbose) {
+    // Tool call logging can be implemented here if the agent emits 'tool_call' events.
+    // Currently, only 'delegation' events are emitted.
+  }
+
   await agent.start();
 
   try {
+    console.log(`\n❯ ${query}\n`);
     const response = await agent.query(query);
-    console.log(response);
+    console.log(`\n${response}\n`);
   } catch (error) {
     console.error("Error executing query:", error);
   } finally {
@@ -284,21 +111,41 @@ async function oneShotQuery(query: string, recursive: boolean): Promise<void> {
 // --- Main Runner ---
 
 async function run(args: string[]): Promise<void> {
-  if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+  // Parse flags first
+  let recursive = false;
+  let verbose = false;
+  let debug = false;
+  let json = false;
+  const positional: string[] = [];
+
+  for (const arg of args) {
+    if (arg === '--recursive' || arg === '-r') {
+      recursive = true;
+    } else if (arg === '--verbose' || arg === '-v') {
+      verbose = true;
+    } else if (arg === '--debug' || arg === '-d') {
+      debug = true;
+    } else if (arg === '--json') {
+      json = true;
+    } else if (arg === '--help' || arg === '-h') {
+      printHelp();
+      return;
+    } else if (arg === '--version') {
+      console.log('VoltClaw v1.0.0');
+      return;
+    } else if (!arg.startsWith('-')) {
+      positional.push(arg);
+    }
+  }
+
+  const command = positional[0];
+
+  if (!command) {
     printHelp();
     return;
   }
 
-  const command = args[0];
-  if (!command) return;
-
-  if (!['start', 'repl', 'keys', 'config', 'version', 'help'].includes(command) && !command.startsWith('-')) {
-    const query = command;
-    const recursive = args.includes('--recursive');
-    await oneShotQuery(query, recursive);
-    return;
-  }
-
+  // Handle known commands
   switch (command) {
     case 'start':
       await startCommand(false);
@@ -307,11 +154,19 @@ async function run(args: string[]): Promise<void> {
       await startCommand(true);
       break;
     case 'dm': {
-      if (args.length < 3) {
+      if (positional.length < 3) {
         console.error('Usage: voltclaw dm <npub/hex> <message>');
         process.exit(1);
       }
-      await dmCommand(args[1] || '', args[2] || '');
+      await dmCommand(positional[1] || '', positional[2] || '');
+      break;
+    }
+    case 'health': {
+      await healthCommand(json);
+      break;
+    }
+    case 'session': {
+      await sessionCommand(positional[1] || 'list', positional[2]);
       break;
     }
     case 'keys': {
@@ -329,9 +184,10 @@ async function run(args: string[]): Promise<void> {
       console.log('VoltClaw v1.0.0');
       break;
     default:
-      console.error(`Unknown command: ${command}`);
-      printHelp();
-      process.exit(1);
+      // Treat as one-shot query
+      const query = positional.join(' ');
+      await oneShotQuery(query, { recursive, verbose, debug });
+      break;
   }
 }
 

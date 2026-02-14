@@ -4,9 +4,9 @@ export interface MockLLMConfig {
   responses?: Record<string, string>;
   patterns?: Array<{
     match: RegExp;
-    respond: (...groups: string[]) => string;
+    respond: (...groups: string[]) => string | Partial<ChatResponse>;
   }>;
-  handler?: (messages: ChatMessage[]) => Promise<string>;
+  handler?: (messages: ChatMessage[]) => Promise<string | Partial<ChatResponse>>;
   delay?: { min: number; max: number };
   failureRate?: number;
   defaultResponse?: string;
@@ -18,8 +18,8 @@ export class MockLLM {
   readonly supportsTools = true;
 
   private responses: Record<string, string>;
-  private patterns: Array<{ match: RegExp; respond: (...groups: string[]) => string }>;
-  private customHandler?: (messages: ChatMessage[]) => Promise<string>;
+  private patterns: Array<{ match: RegExp; respond: (...groups: string[]) => string | Partial<ChatResponse> }>;
+  private customHandler?: (messages: ChatMessage[]) => Promise<string | Partial<ChatResponse>>;
   private delayConfig?: { min: number; max: number };
   private failureRate: number;
   private defaultResponse: string;
@@ -51,8 +51,8 @@ export class MockLLM {
     const content = lastMessage?.content ?? '';
 
     if (this.customHandler) {
-      const response = await this.customHandler(messages);
-      return { content: response };
+      const result = await this.customHandler(messages);
+      return typeof result === 'string' ? { content: result } : { content: result.content ?? '', ...result };
     }
 
     for (const [key, response] of Object.entries(this.responses)) {
@@ -64,8 +64,8 @@ export class MockLLM {
     for (const pattern of this.patterns) {
       const match = content.match(pattern.match);
       if (match) {
-        const response = pattern.respond(...match.slice(1));
-        return { content: response };
+        const result = pattern.respond(...match.slice(1));
+        return typeof result === 'string' ? { content: result } : { content: result.content ?? '', ...result };
       }
     }
 

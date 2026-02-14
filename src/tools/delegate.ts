@@ -47,6 +47,41 @@ export function createDelegateTool(config: DelegateToolConfig): Tool {
   };
 }
 
+export function createDelegateParallelTool(config: DelegateToolConfig): Tool {
+  return {
+    name: 'delegate_parallel',
+    description: 'Delegate multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              task: { type: 'string' },
+              summary: { type: 'string' }
+            },
+            required: ['task']
+          },
+          description: 'List of tasks to delegate in parallel (max 10)'
+        }
+      },
+      required: ['tasks']
+    },
+    maxDepth: config.maxDepth - 1,
+    costMultiplier: 3,
+    execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+      // Note: The actual execution logic for parallel delegation is complex and currently handled
+      // inside VoltClawAgent.executeDelegateParallel directly.
+      // This tool definition is mainly for schema purposes if used outside the agent context.
+      // However, for consistency, we could expose an onDelegateParallel hook.
+      // For now, the agent handles it internally by intercepting the tool name.
+      return { error: 'Parallel delegation should be handled by the agent core' };
+    }
+  };
+}
+
 export function estimateTokens(text: string): number {
   return Math.ceil((text?.length ?? 0) / 4);
 }
