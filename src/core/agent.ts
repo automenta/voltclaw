@@ -6,6 +6,7 @@ import { NostrClient } from '../channels/nostr/index.js';
 import { FileStore } from '../memory/index.js';
 import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
+import { CircuitBreaker } from './circuit-breaker.js';
 
 import type {
   VoltClawAgentOptions,
@@ -27,7 +28,8 @@ import type {
   ToolCallResult,
   LLMConfig,
   ChannelConfig,
-  PersistenceConfig
+  PersistenceConfig,
+  CircuitBreakerConfig
 } from './types.js';
 import {
   VoltClawError,
@@ -44,6 +46,8 @@ const DEFAULT_BUDGET_USD = 0.75;
 const DEFAULT_TIMEOUT_MS = 600000;
 const DEFAULT_MAX_HISTORY = 60;
 const DEFAULT_PRUNE_INTERVAL = 300000;
+const DEFAULT_CB_THRESHOLD = 5;
+const DEFAULT_CB_RESET_MS = 60000;
 
 interface AgentState {
   isRunning: boolean;
@@ -58,6 +62,8 @@ export class VoltClawAgent {
   private readonly pluginManager: PluginManager;
   private workspaceContext: string = '';
   private readonly tools: Map<string, Tool> = new Map();
+  private readonly circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -96,6 +102,11 @@ export class VoltClawAgent {
     this.timeoutMs = options.call?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxHistory = options.history?.maxMessages ?? DEFAULT_MAX_HISTORY;
     this.autoPruneInterval = options.history?.autoPruneInterval ?? DEFAULT_PRUNE_INTERVAL;
+
+    this.circuitBreakerConfig = options.circuitBreaker ?? {
+      failureThreshold: DEFAULT_CB_THRESHOLD,
+      resetTimeoutMs: DEFAULT_CB_RESET_MS
+    };
 
     if (options.tools) {
       this.registerTools(options.tools);
@@ -180,6 +191,13 @@ export class VoltClawAgent {
       warn: (_message: string, _data?: Record<string, unknown>) => {},
       error: (_message: string, _data?: Record<string, unknown>) => {}
     };
+  }
+
+  private getCircuitBreaker(name: string): CircuitBreaker {
+    if (!this.circuitBreakers.has(name)) {
+      this.circuitBreakers.set(name, new CircuitBreaker(this.circuitBreakerConfig));
+    }
+    return this.circuitBreakers.get(name)!;
   }
 
   private registerTools(tools: Tool[] | { builtins?: string[]; directories?: string[] }): void {
@@ -306,9 +324,10 @@ export class VoltClawAgent {
       ...session.history.slice(-this.maxHistory)
     ];
 
-    let response = await this.llm.chat(messages, {
+    const cb = this.getCircuitBreaker('llm');
+    let response = await cb.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    });
+    }));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -327,9 +346,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await this.llm.chat(messages, {
+      response = await cb.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      });
+      }));
     }
 
     const reply = response.content || '[error]';
@@ -504,9 +523,10 @@ export class VoltClawAgent {
       { role: 'user', content }
     ];
 
-    let response = await this.llm.chat(messages, {
+    const cb = this.getCircuitBreaker('llm');
+    let response = await cb.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    });
+    }));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -524,9 +544,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await this.llm.chat(messages, {
+      response = await cb.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      });
+      }));
     }
 
     const reply = response.content || '[error]';
@@ -579,9 +599,10 @@ Parent context: ${contextSummary}${mustFinish}`;
     ];
 
     try {
-      const response = await this.llm.chat(messages, {
+      const cb = this.getCircuitBreaker('llm');
+      const response = await cb.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(depth)
-      });
+      }));
       
       const result = response.content || '[no content]';
       await this.channel.send(
@@ -655,7 +676,8 @@ Parent context: ${contextSummary}${mustFinish}`;
       { role: 'user', content: prompt }
     ];
 
-    const response = await this.llm.chat(messages).catch(() => ({
+    const cb = this.getCircuitBreaker('llm');
+    const response = await cb.execute(() => this.llm.chat(messages)).catch(() => ({
       content: 'Synthesis failed. Raw results:\n' + results
     }));
 
@@ -689,7 +711,8 @@ Parent context: ${contextSummary}${mustFinish}`;
           }
       }
 
-      const result = await tool.execute(args);
+      const cb = this.getCircuitBreaker(name);
+      const result = await cb.execute(() => tool.execute(args));
       return result as ToolCallResult;
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };

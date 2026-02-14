@@ -11,6 +11,12 @@ export interface VoltClawAgentOptions {
   logger?: Logger | LoggerConfig;
   interactive?: boolean;
   plugins?: (string | import('./plugin.js').VoltClawPlugin)[];
+  circuitBreaker?: CircuitBreakerConfig;
+}
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
 }
 
 export interface LLMConfig {
