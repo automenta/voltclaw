@@ -10,6 +10,7 @@ export interface VoltClawAgentOptions {
   middleware?: Middleware[];
   logger?: Logger | LoggerConfig;
   interactive?: boolean;
+  plugins?: (string | import('./plugin.js').VoltClawPlugin)[];
 }
 
 export interface LLMConfig {

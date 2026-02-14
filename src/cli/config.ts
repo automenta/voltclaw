@@ -21,6 +21,7 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
+  plugins?: string[];
 }
 
 const defaultConfig: CLIConfig = {
@@ -38,7 +39,8 @@ const defaultConfig: CLIConfig = {
     maxCalls: 25,
     budgetUSD: 0.75,
     timeoutMs: 600000
-  }
+  },
+  plugins: []
 };
 
 export async function loadConfig(): Promise<CLIConfig> {

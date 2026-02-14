@@ -66,6 +66,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     channel,
     persistence: store,
     call: config.call,
+    plugins: config.plugins,
     tools,
     hooks: {
       onMessage: async (ctx: MessageContext) => {

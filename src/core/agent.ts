@@ -5,6 +5,7 @@ import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.
 import { NostrClient } from '../channels/nostr/index.js';
 import { FileStore } from '../memory/index.js';
 import { Workspace } from './workspace.js';
+import { PluginManager } from './plugin.js';
 
 import type {
   VoltClawAgentOptions,
@@ -54,6 +55,7 @@ export class VoltClawAgent {
   private readonly channel: Channel;
   private readonly store: Store;
   private readonly workspace: Workspace;
+  private readonly pluginManager: PluginManager;
   private workspaceContext: string = '';
   private readonly tools: Map<string, Tool> = new Map();
   private readonly middleware: Middleware[] = [];
@@ -86,6 +88,7 @@ export class VoltClawAgent {
     this.channel = this.resolveChannel(channelOption);
     this.store = this.resolveStore(options.persistence);
     this.workspace = new Workspace();
+    this.pluginManager = new PluginManager();
     
     this.maxDepth = options.call?.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.maxCalls = options.call?.maxCalls ?? DEFAULT_MAX_CALLS;
@@ -100,6 +103,10 @@ export class VoltClawAgent {
 
     if (options.middleware) {
       this.middleware = options.middleware;
+    }
+
+    if (options.plugins) {
+      this.registerPlugins(options.plugins);
     }
 
     if (options.hooks) {
@@ -183,6 +190,23 @@ export class VoltClawAgent {
     }
   }
 
+  private registerPlugins(plugins: (string | import('./plugin.js').VoltClawPlugin)[]): void {
+    for (const plugin of plugins) {
+      if (typeof plugin === 'string') {
+        this.pluginManager.load(plugin).catch(e => this.logger.error('Failed to load plugin', { error: String(e) }));
+      } else {
+        this.pluginManager.register(plugin);
+      }
+    }
+
+    // Register tools and middleware immediately for instances
+    const tools = this.pluginManager.getTools();
+    this.registerTools(tools);
+
+    const middleware = this.pluginManager.getMiddleware();
+    this.middleware.push(...middleware);
+  }
+
   async start(): Promise<void> {
     if (this.state.isRunning) {
       return;
@@ -200,6 +224,9 @@ export class VoltClawAgent {
 
     await this.channel.start();
     await this.store.load?.();
+
+    await this.pluginManager.initAll(this);
+    await this.pluginManager.startAll(this);
 
     this.transportUnsubscribe = this.channel.subscribe(
       async (from: string, content: string, meta: MessageMeta) => {
@@ -231,6 +258,7 @@ export class VoltClawAgent {
       this.pruneTimer = undefined;
     }
 
+    await this.pluginManager.stopAll(this);
     await this.channel.stop();
     await this.store.save?.();
 
@@ -363,6 +391,15 @@ export class VoltClawAgent {
 
       if (toolCalls.length > 0) {
         shouldContinue = true;
+
+        // Push assistant response with tool calls to session history
+        session.history.push({
+          role: 'assistant',
+          content: fullContent,
+          toolCalls: toolCalls
+        });
+
+        // Also push to local messages array for next turn
         messages.push({
           role: 'assistant',
           content: fullContent,
@@ -371,12 +408,26 @@ export class VoltClawAgent {
 
         for (const call of toolCalls) {
           const result = await this.executeTool(call.name, call.arguments, session, 'self');
+          const resultStr = JSON.stringify(result);
+
+          // Push tool result to session history
+          session.history.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: resultStr
+          });
+
+          // Also push to local messages array
           messages.push({
             role: 'tool',
             toolCallId: call.id,
-            content: JSON.stringify(result)
+            content: resultStr
           });
         }
+
+        // Save session state after tool execution loop
+        this.pruneHistory(session);
+        await this.store.save?.();
       } else {
         const reply = fullContent || '[error]';
         session.history.push({ role: 'assistant', content: reply });

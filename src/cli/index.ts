@@ -83,6 +83,7 @@ async function oneShotQuery(
     channel,
     persistence: store,
     call: options.recursive ? config.call : { ...config.call, maxDepth: 1 },
+    plugins: config.plugins,
     tools,
     hooks: {
        onCall: async (ctx) => {
