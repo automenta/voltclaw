@@ -118,8 +118,10 @@ async function oneShotQuery(
 
   try {
     console.log(`\n❯ ${query}\n`);
-    const response = await agent.query(query);
-    console.log(`\n${response}\n`);
+    for await (const chunk of agent.queryStream(query)) {
+      process.stdout.write(chunk);
+    }
+    process.stdout.write('\n');
   } catch (error) {
     console.error("Error executing query:", error);
   } finally {

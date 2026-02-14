@@ -312,6 +312,80 @@ export class VoltClawAgent {
     return reply;
   }
 
+  async *queryStream(message: string, _options?: QueryOptions): AsyncIterable<string> {
+    const session = this.store.get('self', true);
+
+    if (session.depth === undefined) session.depth = 0;
+
+    session.history.push({ role: 'user', content: message });
+
+    session.subTasks = {};
+    session.callCount = 0;
+    session.estCostUSD = 0;
+    session.actualTokensUsed = 0;
+    session.topLevelStartedAt = Date.now();
+
+    const systemPrompt = this.buildSystemPrompt(session.depth);
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...session.history.slice(-this.maxHistory)
+    ];
+
+    if (!this.llm.stream) {
+      const response = await this.query(message, _options);
+      yield response;
+      return;
+    }
+
+    let shouldContinue = true;
+    while (shouldContinue) {
+      shouldContinue = false;
+
+      const stream = this.llm.stream(messages, {
+        tools: this.getToolDefinitions(session.depth)
+      });
+
+      let fullContent = '';
+      const toolCalls: import('./types.js').ToolCall[] = [];
+
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          fullContent += chunk.content;
+          yield chunk.content;
+        }
+        if (chunk.toolCalls) {
+          const tc = chunk.toolCalls;
+          if (tc.id && tc.name && tc.arguments) {
+             toolCalls.push(tc as import('./types.js').ToolCall);
+          }
+        }
+      }
+
+      if (toolCalls.length > 0) {
+        shouldContinue = true;
+        messages.push({
+          role: 'assistant',
+          content: fullContent,
+          toolCalls: toolCalls
+        });
+
+        for (const call of toolCalls) {
+          const result = await this.executeTool(call.name, call.arguments, session, 'self');
+          messages.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: JSON.stringify(result)
+          });
+        }
+      } else {
+        const reply = fullContent || '[error]';
+        session.history.push({ role: 'assistant', content: reply });
+        this.pruneHistory(session);
+        await this.store.save?.();
+      }
+    }
+  }
+
   private async handleMessage(from: string, content: string, meta: MessageMeta): Promise<void> {
     if (this.state.isPaused) {
       this.logger.debug('Message ignored - agent paused', { from });

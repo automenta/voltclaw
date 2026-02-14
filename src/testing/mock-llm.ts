@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, ChatOptions, ToolCall } from '../core/types.js';
+import type { ChatMessage, ChatResponse, ChatOptions, ToolCall, ChatChunk } from '../core/types.js';
 
 export interface MockLLMConfig {
   responses?: Record<string, string>;
@@ -80,6 +80,26 @@ export class MockLLM {
     }
 
     return { content: this.defaultResponse };
+  }
+
+  async *stream(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk> {
+    const response = await this.chat(messages, options);
+
+    if (response.content) {
+      const words = response.content.split(' ');
+      for (const word of words) {
+        yield { content: word + ' ' };
+        await new Promise(r => setTimeout(r, 10)); // Simulate delay
+      }
+    }
+
+    if (response.toolCalls) {
+      for (const tc of response.toolCalls) {
+        yield { toolCalls: tc };
+      }
+    }
+
+    yield { done: true };
   }
 
   private tryGenerateToolCall(content: string, tools: ChatOptions['tools']): ToolCall | null {
