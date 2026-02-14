@@ -241,6 +241,7 @@ export interface ToolParameterProperty {
   enum?: string[];
   items?: ToolParameterProperty;
   properties?: Record<string, ToolParameterProperty>;
+  required?: string[];
 }
 
 export interface ToolDefinition {
