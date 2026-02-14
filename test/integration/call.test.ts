@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestHarness, MockLLM } from '../../src/testing/index.js';
 
-describe('Delegation Integration', () => {
+describe('Call Integration', () => {
   let harness: TestHarness;
 
   afterEach(async () => {
     await harness?.stop();
   });
 
-  it('delegates task and returns result', async () => {
+  it('calls sub-agent task and returns result', async () => {
     harness = new TestHarness({
       llm: new MockLLM({
         handler: async (messages) => {
@@ -17,11 +17,11 @@ describe('Delegation Integration', () => {
 
             if (content.includes('Analyze the request')) {
                  return {
-                    content: 'I will delegate this task.',
+                    content: 'I will call this task.',
                     toolCalls: [
                         {
                             id: 'call_1',
-                            name: 'delegate',
+                            name: 'call',
                             arguments: { task: 'Calculate 2+2', summary: 'Math task' }
                         }
                     ]
@@ -51,15 +51,15 @@ describe('Delegation Integration', () => {
 
     await harness.start();
 
-    // Trigger delegation
+    // Trigger call
     const response = await harness.agent.query('Analyze the request');
 
     // The response should be the final synthesized answer
     expect(response).toContain('Final answer is 4');
 
-    // Check if delegation occurred
+    // Check if call occurred
     const session = harness.agent['store'].get('self', true);
-    expect(session.delegationCount).toBe(1);
+    expect(session.callCount).toBe(1);
 
     // Verify subtask result
     const subtasks = Object.values(session.subTasks);
@@ -68,9 +68,9 @@ describe('Delegation Integration', () => {
     expect(subtasks[0].arrived).toBe(true);
   });
 
-  it('handles delegation timeout', async () => {
+  it('handles call timeout', async () => {
     harness = new TestHarness({
-      delegation: { timeoutMs: 100 }, // Short timeout
+      call: { timeoutMs: 100 }, // Short timeout
       llm: new MockLLM({
         handler: async (messages) => {
             const last = messages[messages.length - 1];
@@ -78,10 +78,10 @@ describe('Delegation Integration', () => {
 
             if (content.includes('Task to timeout')) {
                 return {
-                    content: 'Delegating...',
+                    content: 'Calling...',
                     toolCalls: [{
                         id: 'call_2',
-                        name: 'delegate',
+                        name: 'call',
                         arguments: { task: 'Slow task' }
                     }]
                 };

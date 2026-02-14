@@ -53,7 +53,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     llm,
     transport,
     persistence: store,
-    delegation: config.delegation,
+    call: config.call,
     tools,
     hooks: {
       onMessage: async (ctx: MessageContext) => {

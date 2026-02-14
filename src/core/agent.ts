@@ -15,7 +15,7 @@ import type {
   Logger,
   MessageContext,
   ReplyContext,
-  DelegationContext,
+  CallContext,
   ErrorContext,
   QueryOptions,
   Unsubscribe,
@@ -57,8 +57,9 @@ export class VoltClawAgent {
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
     onReply?: (ctx: ReplyContext) => Promise<void>;
-    onDelegation?: (ctx: DelegationContext) => Promise<void>;
+    onCall?: (ctx: CallContext) => Promise<void>;
     onError?: (ctx: ErrorContext) => Promise<void>;
+    onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
     onStart?: () => Promise<void>;
     onStop?: () => Promise<void>;
   } = {};
@@ -80,10 +81,10 @@ export class VoltClawAgent {
     this.transport = this.resolveTransport(options.transport);
     this.store = this.resolveStore(options.persistence);
     
-    this.maxDepth = options.delegation?.maxDepth ?? DEFAULT_MAX_DEPTH;
-    this.maxCalls = options.delegation?.maxCalls ?? DEFAULT_MAX_CALLS;
-    this.budgetUSD = options.delegation?.budgetUSD ?? DEFAULT_BUDGET_USD;
-    this.timeoutMs = options.delegation?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.maxDepth = options.call?.maxDepth ?? DEFAULT_MAX_DEPTH;
+    this.maxCalls = options.call?.maxCalls ?? DEFAULT_MAX_CALLS;
+    this.budgetUSD = options.call?.budgetUSD ?? DEFAULT_BUDGET_USD;
+    this.timeoutMs = options.call?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxHistory = options.history?.maxMessages ?? DEFAULT_MAX_HISTORY;
     this.autoPruneInterval = options.history?.autoPruneInterval ?? DEFAULT_PRUNE_INTERVAL;
 
@@ -258,7 +259,7 @@ export class VoltClawAgent {
     
     // Adapted from handleTopLevel for direct response:
     session.subTasks = {};
-    session.delegationCount = 0;
+    session.callCount = 0;
     session.estCostUSD = 0;
     session.actualTokensUsed = 0;
     session.topLevelStartedAt = Date.now();
@@ -281,7 +282,7 @@ export class VoltClawAgent {
       });
 
       for (const call of response.toolCalls) {
-        // Execute tool (including delegate if enabled)
+        // Execute tool (including 'call' if enabled)
         const result = await this.executeTool(call.name, call.arguments, session, 'self');
         messages.push({
           role: 'tool',
@@ -358,7 +359,7 @@ export class VoltClawAgent {
   ): Promise<void> {
     session.depth = 0;
     session.subTasks = {};
-    session.delegationCount = 0;
+    session.callCount = 0;
     session.estCostUSD = 0;
     session.actualTokensUsed = 0;
     session.topLevelStartedAt = Date.now();
@@ -426,7 +427,7 @@ export class VoltClawAgent {
     session.depth = depth;
 
     const mustFinish = depth >= this.maxDepth - 1
-      ? '\nMUST produce final concise answer NOW. No further delegation.'
+      ? '\nMUST produce final concise answer NOW. No further calls.'
       : '';
 
     // Use template or fallback
@@ -455,14 +456,14 @@ Parent context: ${contextSummary}${mustFinish}`;
         JSON.stringify({ type: 'subtask_result', subId, result })
       );
 
-      const delCtx: DelegationContext = {
+      const callCtx: CallContext = {
         taskId: subId,
         task,
         depth,
         parentPubkey
       };
-      await this.hooks.onDelegation?.(delCtx);
-      this.emit('delegation', delCtx);
+      await this.hooks.onCall?.(callCtx);
+      this.emit('call', callCtx);
     } catch (error) {
       await this.transport.send(
         this.transport.identity.publicKey,
@@ -535,17 +536,24 @@ Parent context: ${contextSummary}${mustFinish}`;
     from: string
   ): Promise<ToolCallResult> {
     try {
-      if (name === 'delegate') {
-        return await this.executeDelegate(args, session, from);
+      if (name === 'call') {
+        return await this.executeCall(args, session, from);
       }
       
-      if (name === 'delegate_parallel') {
-        return await this.executeDelegateParallel(args, session, from);
+      if (name === 'call_parallel') {
+        return await this.executeCallParallel(args, session, from);
       }
 
       const tool = this.tools.get(name);
       if (!tool) {
         return { error: `Tool not found: ${name}` };
+      }
+
+      if (this.hooks.onToolApproval) {
+          const approved = await this.hooks.onToolApproval(name, args);
+          if (!approved) {
+              return { error: 'Tool execution denied by user' };
+          }
       }
 
       const result = await tool.execute(args);
@@ -555,7 +563,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     }
   }
 
-  private async executeDelegate(
+  private async executeCall(
     args: Record<string, unknown>,
     session: Session,
     from: string
@@ -568,8 +576,8 @@ Parent context: ${contextSummary}${mustFinish}`;
       throw new MaxDepthExceededError(this.maxDepth, depth);
     }
 
-    if (session.delegationCount >= this.maxCalls) {
-      return { error: 'Max delegations exceeded' };
+    if (session.callCount >= this.maxCalls) {
+      return { error: 'Max calls exceeded' };
     }
 
     const baseEst = ((task.length + (summary?.length ?? 0)) / 4000) * 0.0005;
@@ -579,7 +587,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       throw new BudgetExceededError(this.budgetUSD, session.estCostUSD);
     }
 
-    session.delegationCount++;
+    session.callCount++;
     session.estCostUSD += estNewCost;
 
     const subId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -615,7 +623,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     }
   }
 
-  private async executeDelegateParallel(
+  private async executeCallParallel(
     args: Record<string, unknown>,
     session: Session,
     from: string
@@ -643,20 +651,20 @@ Parent context: ${contextSummary}${mustFinish}`;
       throw new BudgetExceededError(this.budgetUSD, session.estCostUSD);
     }
 
-    if (session.delegationCount + tasks.length > this.maxCalls) {
-      return { error: `Max delegations exceeded. Can only delegate ${this.maxCalls - session.delegationCount} more tasks.` };
+    if (session.callCount + tasks.length > this.maxCalls) {
+      return { error: `Max calls exceeded. Can only call ${this.maxCalls - session.callCount} more tasks.` };
     }
 
     // Execute in parallel (start all, then wait for all)
-    // We reuse logic from executeDelegate but we want to parallelize sending and waiting
+    // We reuse logic from executeCall but we want to parallelize sending and waiting
 
     // First, start all subtasks
     const promises = tasks.map(async (t) => {
-      // Logic duplicated from executeDelegate but without the budget check which we did already
+      // Logic duplicated from executeCall but without the budget check which we did already
       // And we need to be careful about session updates being atomic or at least consistent
       // JS is single threaded so synchronous updates are fine
 
-      session.delegationCount++;
+      session.callCount++;
       // We already checked budget, just update it roughly
       const baseEst = ((t.task.length + (t.summary?.length ?? 0)) / 4000) * 0.0005;
       session.estCostUSD += baseEst * 3;
@@ -738,7 +746,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       });
     
     if (depth < this.maxDepth) {
-      toolNames.push('delegate');
+      toolNames.push('call');
     }
     
     const toolNamesStr = toolNames.join(', ');
@@ -750,13 +758,13 @@ Parent context: ${contextSummary}${mustFinish}`;
 A recursive autonomous coding agent.
 
 OBJECTIVE:
-You solve complex tasks by breaking them down into smaller subtasks and delegating them to new instances of yourself using the 'delegate' tool.
+You solve complex tasks by breaking them down into smaller subtasks and calling new instances of yourself using the 'call' tool.
 You also have access to file system tools to read, write, and list files. Use these to manipulate code and data directly.
 
 RECURSION STRATEGY:
 1. Analyze the request. Is it simple? Solve it directly.
 2. Is it complex? Break it down.
-3. Use 'delegate' to spawn a sub-agent for each sub-task.
+3. Use 'call' to spawn a sub-agent for each sub-task.
 4. Combine the results.
 
 TOOLS:
@@ -772,7 +780,7 @@ You are persistent, efficient, and recursive.`;
     }
 
     const depthWarning = depth >= this.maxDepth - 1
-        ? '- WARNING: MAX DEPTH REACHED. DO NOT DELEGATE. SOLVE DIRECTLY.'
+        ? '- WARNING: MAX DEPTH REACHED. DO NOT CALL. SOLVE DIRECTLY.'
         : '';
 
     return template
@@ -791,20 +799,20 @@ You are persistent, efficient, and recursive.`;
     
     if (depth < this.maxDepth) {
       definitions.push({
-        name: 'delegate',
-        description: 'Delegate a sub-task to a child agent instance. Use for complex tasks that can be parallelized or decomposed.',
+        name: 'call',
+        description: 'Call a child agent to handle a sub-task. Use for complex tasks that can be parallelized or decomposed.',
         parameters: {
           type: 'object',
           properties: {
-            task: { type: 'string', description: 'The specific task to delegate to the child agent' },
+            task: { type: 'string', description: 'The specific task to call the child agent with' },
             summary: { type: 'string', description: 'Optional context summary for the child agent' }
           },
           required: ['task']
         }
       });
       definitions.push({
-        name: 'delegate_parallel',
-        description: 'Delegate multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
+        name: 'call_parallel',
+        description: 'Call multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
         parameters: {
           type: 'object',
           properties: {
@@ -818,7 +826,7 @@ You are persistent, efficient, and recursive.`;
                 },
                 required: ['task']
               },
-              description: 'List of tasks to delegate in parallel (max 10)'
+              description: 'List of tasks to call in parallel (max 10)'
             }
           },
           required: ['tasks']
@@ -897,9 +905,9 @@ class VoltClawAgentBuilder {
     return this;
   }
 
-  withDelegation(config: DelegationBuilder | ((b: DelegationBuilder) => DelegationBuilder)): this {
-    const builder = typeof config === 'function' ? config(new DelegationBuilder()) : config;
-    this.options.delegation = builder.build();
+  withCall(config: CallBuilder | ((b: CallBuilder) => CallBuilder)): this {
+    const builder = typeof config === 'function' ? config(new CallBuilder()) : config;
+    this.options.call = builder.build();
     return this;
   }
 
@@ -1000,8 +1008,8 @@ class TransportBuilder {
   }
 }
 
-class DelegationBuilder {
-  private config: import('./types.js').DelegationConfig = {};
+class CallBuilder {
+  private config: import('./types.js').CallConfig = {};
 
   maxDepth(depth: number): this {
     this.config.maxDepth = depth;
@@ -1023,7 +1031,7 @@ class DelegationBuilder {
     return this;
   }
 
-  build(): import('./types.js').DelegationConfig {
+  build(): import('./types.js').CallConfig {
     return this.config;
   }
 }

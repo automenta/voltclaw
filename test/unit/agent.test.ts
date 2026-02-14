@@ -10,7 +10,7 @@ describe('VoltClawAgent', () => {
       expect(llm.name).toBe('mock');
     });
 
-  it('creates agent with custom delegation config', () => {
+  it('creates agent with custom call config', () => {
     const mockTransport = {
       type: 'mock',
       identity: { publicKey: 'test' },
@@ -24,7 +24,7 @@ describe('VoltClawAgent', () => {
       llm: new MockLLM(),
       transport: mockTransport,
       persistence: new MemoryStore(),
-      delegation: {
+      call: {
         maxDepth: 2,
         maxCalls: 5,
         budgetUSD: 0.25
@@ -45,7 +45,7 @@ describe('MemoryStore', () => {
   it('creates new session for unknown key', () => {
     const session = store.get('test-pubkey');
     expect(session.history).toEqual([]);
-    expect(session.delegationCount).toBe(0);
+    expect(session.callCount).toBe(0);
   });
 
   it('returns same session for same key', () => {

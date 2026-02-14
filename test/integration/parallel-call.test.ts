@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestHarness, MockLLM } from '../../src/testing/index.js';
 
-describe('Parallel Delegation Integration', () => {
+describe('Parallel Call Integration', () => {
   let harness: TestHarness;
 
   afterEach(async () => {
     await harness?.stop();
   });
 
-  it('delegates multiple tasks in parallel', async () => {
+  it('calls multiple tasks in parallel', async () => {
     harness = new TestHarness({
       relayPort: 40405,
       llm: new MockLLM({
@@ -18,11 +18,11 @@ describe('Parallel Delegation Integration', () => {
 
             if (content.includes('Parallel task')) {
                  return {
-                    content: 'I will delegate two tasks.',
+                    content: 'I will call two tasks.',
                     toolCalls: [
                         {
                             id: 'call_parallel',
-                            name: 'delegate_parallel',
+                            name: 'call_parallel',
                             arguments: {
                                 tasks: [
                                     { task: 'Task A', summary: 'Summary A' },
@@ -61,14 +61,14 @@ describe('Parallel Delegation Integration', () => {
 
     await harness.start();
 
-    // Trigger delegation
+    // Trigger call
     const response = await harness.agent.query('Parallel task');
 
     expect(response).toContain('Combined result: A and B');
 
     // Check session
     const session = harness.agent['store'].get('self', true);
-    expect(session.delegationCount).toBe(2);
+    expect(session.callCount).toBe(2);
 
     const subtasks = Object.values(session.subTasks);
     expect(subtasks.length).toBe(2);

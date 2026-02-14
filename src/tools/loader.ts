@@ -5,7 +5,7 @@ import { TOOLS_DIR } from '../core/bootstrap.js';
 import type { Tool } from './types.js';
 
 import { timeTool, dateTool, sleepTool } from './time.js';
-import { estimateTokensTool } from './delegate.js';
+import { estimateTokensTool } from './call.js';
 import { httpGetTool, httpPostTool } from './http.js';
 import { readFileTool, writeFileTool, listFilesTool } from './files.js';
 import { restartTool } from './restart.js';

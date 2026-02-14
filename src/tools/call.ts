@@ -1,7 +1,7 @@
 import type { Tool, ToolCallResult } from './types.js';
 
-export interface DelegateToolConfig {
-  onDelegate: (args: {
+export interface CallToolConfig {
+  onCall: (args: {
     task: string;
     summary?: string;
     depth: number;
@@ -10,16 +10,16 @@ export interface DelegateToolConfig {
   maxDepth: number;
 }
 
-export function createDelegateTool(config: DelegateToolConfig): Tool {
+export function createCallTool(config: CallToolConfig): Tool {
   return {
-    name: 'delegate',
-    description: 'Delegate a sub-task to a child agent instance. Use for complex tasks that can be parallelized or decomposed.',
+    name: 'call',
+    description: 'Call a child agent to handle a sub-task. Use for complex tasks that can be parallelized or decomposed.',
     parameters: {
       type: 'object',
       properties: {
         task: {
           type: 'string',
-          description: 'The specific task to delegate to the child agent'
+          description: 'The specific task to call the child agent with'
         },
         summary: {
           type: 'string',
@@ -35,10 +35,10 @@ export function createDelegateTool(config: DelegateToolConfig): Tool {
       const summary = args['summary'] !== undefined ? String(args['summary']) : undefined;
 
       if (!task) {
-        return { error: 'Task is required for delegation' };
+        return { error: 'Task is required for call' };
       }
 
-      return config.onDelegate({
+      return config.onCall({
         task,
         summary,
         depth: config.currentDepth + 1
@@ -47,10 +47,10 @@ export function createDelegateTool(config: DelegateToolConfig): Tool {
   };
 }
 
-export function createDelegateParallelTool(config: DelegateToolConfig): Tool {
+export function createCallParallelTool(config: CallToolConfig): Tool {
   return {
-    name: 'delegate_parallel',
-    description: 'Delegate multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
+    name: 'call_parallel',
+    description: 'Call multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
     parameters: {
       type: 'object',
       properties: {
@@ -64,7 +64,7 @@ export function createDelegateParallelTool(config: DelegateToolConfig): Tool {
             },
             required: ['task']
           },
-          description: 'List of tasks to delegate in parallel (max 10)'
+          description: 'List of tasks to call in parallel (max 10)'
         }
       },
       required: ['tasks']
@@ -72,12 +72,10 @@ export function createDelegateParallelTool(config: DelegateToolConfig): Tool {
     maxDepth: config.maxDepth - 1,
     costMultiplier: 3,
     execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
-      // Note: The actual execution logic for parallel delegation is complex and currently handled
-      // inside VoltClawAgent.executeDelegateParallel directly.
+      // Note: The actual execution logic for parallel calls is complex and currently handled
+      // inside VoltClawAgent.executeCallParallel directly.
       // This tool definition is mainly for schema purposes if used outside the agent context.
-      // However, for consistency, we could expose an onDelegateParallel hook.
-      // For now, the agent handles it internally by intercepting the tool name.
-      return { error: 'Parallel delegation should be handled by the agent core' };
+      return { error: 'Parallel calls should be handled by the agent core' };
     }
   };
 }

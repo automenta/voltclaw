@@ -3,7 +3,8 @@ import type {
   ChatMessage,
   ChatResponse,
   ChatOptions,
-  LLMProviderConfig
+  LLMProviderConfig,
+  ChatChunk
 } from './types.js';
 
 interface OllamaToolCall {
@@ -101,6 +102,82 @@ export class OllamaProvider extends BaseLLMProvider {
     }
     
     return result;
+  }
+
+  async *stream(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk> {
+    const body: Record<string, unknown> = {
+      model: this.model,
+      messages: messages.map(m => this.formatMessage(m)),
+      stream: true,
+      options: {
+        temperature: options?.temperature,
+        num_predict: options?.maxTokens
+      }
+    };
+
+    if (options?.tools && options.tools.length > 0) {
+      body['tools'] = options.tools.map(t => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters ?? { type: 'object' as const, properties: {} }
+        }
+      }));
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama stream error: ${response.status} ${response.statusText}`);
+    }
+
+    if (!response.body) throw new Error('No response body');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const data = JSON.parse(line) as OllamaResponse & { done?: boolean };
+
+          if (data.done) {
+            yield { done: true };
+            return;
+          }
+
+          const message = data.message;
+          if (message) {
+            if (message.content) {
+              yield { content: message.content };
+            }
+            if (message.tool_calls) {
+                for (const tc of message.tool_calls) {
+                    yield {
+                        toolCalls: this.parseToolCall(tc)
+                    };
+                }
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
   }
 
   private async chatWithoutTools(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
