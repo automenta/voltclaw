@@ -3,7 +3,8 @@ import type {
   ChatMessage,
   ChatResponse,
   ChatOptions,
-  LLMProviderConfig
+  LLMProviderConfig,
+  ChatChunk
 } from './types.js';
 
 interface AnthropicResponse {
@@ -47,6 +48,124 @@ export class AnthropicProvider extends BaseLLMProvider {
     
     if (!this.apiKey) {
       throw new Error('Anthropic API key is required');
+    }
+  }
+
+  async *stream(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk> {
+    await this.checkRateLimit();
+
+    const systemMessage = messages.find(m => m.role === 'system');
+    const nonSystemMessages = messages.filter(m => m.role !== 'system');
+
+    const toolDefs = options?.tools?.map(t => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.parameters ?? { type: 'object' as const, properties: {} }
+    }));
+
+    const body: Record<string, unknown> = {
+      model: this.model,
+      messages: nonSystemMessages.map(m => this.formatMessage(m)),
+      max_tokens: options?.maxTokens ?? 4096,
+      stream: true
+    };
+
+    if (systemMessage?.content) {
+      body['system'] = systemMessage.content;
+    }
+
+    if (toolDefs && toolDefs.length > 0) {
+      body['tools'] = toolDefs;
+    }
+
+    const response = await fetch(`${this.baseUrl}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unable to read error');
+        throw new Error(`Anthropic stream error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    if (!response.body) throw new Error('No response body');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    let currentBlockIndex = -1;
+    let currentBlockType = '';
+    const toolCallBuffer: Record<number, { id: string; name: string; arguments: string }> = {};
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+
+        const dataStr = line.slice(6);
+        try {
+            const data = JSON.parse(dataStr);
+            const type = data.type;
+
+            if (type === 'content_block_start') {
+                currentBlockIndex = data.index;
+                if (data.content_block.type === 'text') {
+                    currentBlockType = 'text';
+                    if (data.content_block.text) {
+                        yield { content: data.content_block.text };
+                    }
+                } else if (data.content_block.type === 'tool_use') {
+                    currentBlockType = 'tool_use';
+                    toolCallBuffer[currentBlockIndex] = {
+                        id: data.content_block.id,
+                        name: data.content_block.name,
+                        arguments: ''
+                    };
+                }
+            } else if (type === 'content_block_delta') {
+                if (currentBlockType === 'text' && data.delta.type === 'text_delta') {
+                    yield { content: data.delta.text };
+                } else if (currentBlockType === 'tool_use' && data.delta.type === 'input_json_delta') {
+                    const buffered = toolCallBuffer[currentBlockIndex];
+                    if (buffered) {
+                        buffered.arguments += data.delta.partial_json;
+                    }
+                }
+            } else if (type === 'content_block_stop') {
+                if (currentBlockType === 'tool_use') {
+                    const buffered = toolCallBuffer[currentBlockIndex];
+                    if (buffered) {
+                        try {
+                             yield {
+                                 toolCalls: {
+                                     id: buffered.id,
+                                     name: buffered.name,
+                                     arguments: JSON.parse(buffered.arguments)
+                                 }
+                             };
+                        } catch (e) {
+                             // Ignore
+                        }
+                    }
+                }
+                currentBlockType = '';
+            }
+        } catch (e) {
+            // Ignore
+        }
+      }
     }
   }
 

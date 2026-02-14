@@ -33,6 +33,13 @@ export class PluginManager {
     }
   }
 
+  register(plugin: VoltClawPlugin): void {
+    if (this.plugins.has(plugin.name)) {
+      throw new Error(`Plugin ${plugin.name} is already registered`);
+    }
+    this.plugins.set(plugin.name, plugin);
+  }
+
   getTools(): Tool[] {
     return Array.from(this.plugins.values())
       .flatMap(p => p.tools || []);
