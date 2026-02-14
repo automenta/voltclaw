@@ -4,6 +4,7 @@ import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/ind
 import { FileStore } from '../../memory/index.js';
 import { createAllTools } from '../../tools/index.js';
 import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR, CONFIG_FILE } from '../config.js';
+import { askApproval } from '../interactive.js';
 import path from 'path';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
@@ -58,6 +59,8 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
   const tools = await createAllTools();
 
+  let rl: readline.Interface | undefined;
+
   const agent = new VoltClawAgent({
     llm,
     channel,
@@ -77,7 +80,15 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
       },
       onError: async (ctx: ErrorContext) => {
         console.error(`[${new Date().toISOString()}] Error:`, ctx.error.message);
-      }
+      },
+      onToolApproval: interactive ? async (tool, args) => {
+        if (rl) rl.pause();
+        try {
+          return await askApproval(tool, args);
+        } finally {
+          if (rl) rl.resume();
+        }
+      } : undefined
     }
   });
 
@@ -98,32 +109,36 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     console.log('Interactive REPL mode. Type your query below.');
     console.log('Type "exit" to quit.');
 
-    const rl = readline.createInterface({
+    const repl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
       prompt: '> '
     });
 
-    rl.prompt();
+    rl = repl;
 
-    rl.on('line', async (line) => {
+    repl.prompt();
+
+    repl.on('line', async (line) => {
       const query = line.trim();
       if (query === 'exit') {
-        rl.close();
+        repl.close();
         return;
       }
       if (query) {
         try {
-          const response = await agent.query(query);
-          console.log(response);
+          for await (const chunk of agent.queryStream(query)) {
+            process.stdout.write(chunk);
+          }
+          process.stdout.write('\n');
         } catch (error) {
           console.error('Error:', error);
         }
       }
-      rl.prompt();
+      repl.prompt();
     });
 
-    rl.on('close', async () => {
+    repl.on('close', async () => {
       console.log('\nShutting down...');
       await agent.stop();
       process.exit(0);

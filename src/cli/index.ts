@@ -11,8 +11,8 @@ import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
 import { configureCommand } from './commands/configure.js';
+import { askApproval } from './interactive.js';
 import path from 'path';
-import readline from 'readline';
 
 function createLLMProvider(config: any): LLMProvider {
   switch (config.provider) {
@@ -92,20 +92,7 @@ async function oneShotQuery(
          }
        },
        onToolApproval: options.interactive ? async (tool, args) => {
-           // Simple check for destructive tools or always ask
-           const DESTRUCTIVE = ['execute', 'write_file', 'edit', 'delete'];
-           if (!DESTRUCTIVE.includes(tool)) return true;
-
-           const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-           return new Promise(resolve => {
-               console.log(`\n⚠️  Tool Approval Required:`);
-               console.log(`   Tool: ${tool}`);
-               console.log(`   Args: ${JSON.stringify(args, null, 2)}`);
-               rl.question(`   Allow execution? [y/N]: `, answer => {
-                   rl.close();
-                   resolve(answer.trim().toLowerCase().startsWith('y'));
-               });
-           });
+         return askApproval(tool, args);
        } : undefined
     }
   });
