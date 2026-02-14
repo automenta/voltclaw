@@ -15,6 +15,14 @@ export interface VoltClawAgentOptions {
   retry?: RetryConfig;
   fallbacks?: Record<string, string>;
   dlq?: DLQConfig;
+  permissions?: PermissionConfig;
+}
+
+export type Role = 'admin' | 'user' | 'agent' | 'subagent';
+
+export interface PermissionConfig {
+  admins?: string[]; // Public keys of admins
+  policy?: 'allow_all' | 'deny_all'; // Default policy if no role specified on tool
 }
 
 export interface DLQConfig {
@@ -267,6 +275,7 @@ export interface Tool {
   execute: (args: Record<string, unknown>) => Promise<ToolCallResult> | ToolCallResult;
   maxDepth?: number;
   costMultiplier?: number;
+  requiredRoles?: Role[];
 }
 
 export interface ToolParameters {

@@ -32,11 +32,14 @@ import type {
   ChannelConfig,
   PersistenceConfig,
   CircuitBreakerConfig,
-  RetryConfig
+  RetryConfig,
+  PermissionConfig,
+  Role
 } from './types.js';
 import {
   VoltClawError,
   ConfigurationError,
+  AuthorizationError,
   MaxDepthExceededError,
   BudgetExceededError,
   TimeoutError,
@@ -74,6 +77,7 @@ export class VoltClawAgent {
   private readonly retrier: Retrier;
   private readonly fallbacks: Record<string, string>;
   public readonly dlq: DeadLetterQueue;
+  private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -130,6 +134,8 @@ export class VoltClawAgent {
 
     // DLQ initialization (currently only memory supported)
     this.dlq = new DeadLetterQueue();
+
+    this.permissions = options.permissions ?? { policy: 'allow_all' };
 
     if (options.tools) {
       this.registerTools(options.tools);
@@ -727,6 +733,12 @@ Parent context: ${contextSummary}${mustFinish}`;
         return { error: `Tool not found: ${name}` };
       }
 
+      // Check RBAC
+      const role = this.getRole(from);
+      if (!this.checkPermission(tool, role)) {
+        throw new AuthorizationError(`User ${from.slice(0, 8)} (role: ${role}) not authorized for tool ${name}`);
+      }
+
       if (this.hooks.onToolApproval) {
           const approved = await this.hooks.onToolApproval(name, args);
           if (!approved) {
@@ -986,6 +998,31 @@ You are persistent, efficient, and recursive.`;
         .replace('{tools}', toolNamesStr)
         .replace('{depthWarning}', depthWarning)
         + this.workspaceContext;
+  }
+
+  private getRole(pubkey: string): Role {
+    if (this.channel.identity.publicKey === pubkey) {
+      return 'admin'; // Self is always admin
+    }
+    if (this.permissions.admins?.includes(pubkey)) {
+      return 'admin';
+    }
+    // TODO: More role logic (user/agent map)
+    return 'user';
+  }
+
+  private checkPermission(tool: Tool, role: Role): boolean {
+    if (role === 'admin') return true;
+
+    if (tool.requiredRoles) {
+      return tool.requiredRoles.includes(role);
+    }
+
+    // Default policy if no roles specified
+    if (this.permissions.policy === 'deny_all') {
+      return false;
+    }
+    return true; // Allow all by default
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {

@@ -148,6 +148,13 @@ export class CircuitOpenError extends VoltClawError {
   }
 }
 
+export class AuthorizationError extends VoltClawError {
+  constructor(message: string = 'Access denied') {
+    super(message, 'AUTHORIZATION_ERROR');
+    this.name = 'AuthorizationError';
+  }
+}
+
 export function isRetryable(error: unknown): boolean {
   if (error instanceof LLMRateLimitError) return true;
   if (error instanceof TimeoutError) return true;
