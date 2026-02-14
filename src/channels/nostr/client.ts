@@ -243,3 +243,10 @@ export async function generateNewKeyPair(): Promise<{
     nsec: nip19.nsecEncode(sk)
   };
 }
+
+export function getPublicKeyFromSecret(secretKey: string): string {
+    const key = decodePrivateKey(secretKey);
+    return getPublicKey(key);
+}
+
+export { nip19 };

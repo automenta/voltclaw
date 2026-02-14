@@ -1,4 +1,4 @@
-export { NostrClient, generateNewKeyPair, resolveToHex, type NostrClientOptions } from './client.js';
+export { NostrClient, generateNewKeyPair, resolveToHex, getPublicKeyFromSecret, nip19, type NostrClientOptions } from './client.js';
 export type {
   Channel,
   Transport, // Deprecated alias

@@ -1,5 +1,5 @@
 import inquirer from 'inquirer';
-import { generateNewKeyPair, resolveToHex } from '../../channels/nostr/index.js';
+import { generateNewKeyPair, resolveToHex, getPublicKeyFromSecret, nip19 } from '../../channels/nostr/index.js';
 import { Workspace } from '../../core/workspace.js';
 import { loadConfig, loadOrGenerateKeys, CONFIG_FILE, KEYS_FILE, VOLTCLAW_DIR, type CLIConfig } from '../config.js';
 import fs from 'fs/promises';
@@ -100,21 +100,17 @@ export async function configureCommand(): Promise<void> {
         console.error('Invalid key length. Using generated key instead.');
         keys = await generateNewKeyPair();
     } else {
-        // We can't fully validate without importing nostr-tools, assuming valid for now or re-deriving public key
-        // But generateNewKeyPair returns full object. resolveToHex just returns string.
-        // We should probably use restore key logic but we don't have it exposed easily.
-        // Let's just generate a new one if invalid, or trust user.
-        // Actually, let's treat it as secretKey.
-        keys.secretKey = hex;
-        // We need public key.
-        // importing getPublicKey from nostr-tools is needed.
-        // But for now, let's assume valid keypair if we can't derive.
-        // Wait, I can import getPublicKey from nostr-tools here? No, I should import from channels/nostr/index.
-        // channels/nostr/index doesn't export getPublicKey directly, it exports generateNewKeyPair.
-        // I should update channels/nostr/index to export getPublicKey or add a helper.
-        // For now, let's skip strict validation/derivation here to keep it simple or fallback to generate.
-        console.warn("Importing key without full validation/derivation (public key might be missing in config until restart).");
-        keys.publicKey = ''; // Will be derived on start
+        try {
+            keys.secretKey = hex;
+            keys.publicKey = getPublicKeyFromSecret(hex);
+            keys.nsec = nip19.nsecEncode(Uint8Array.from(Buffer.from(hex, 'hex')));
+            keys.npub = nip19.npubEncode(keys.publicKey);
+            console.log(`Imported identity: ${keys.npub}`);
+        } catch (error) {
+            console.error('Failed to import key:', error);
+            console.log('Generating new identity instead.');
+            keys = await generateNewKeyPair();
+        }
     }
   }
 
