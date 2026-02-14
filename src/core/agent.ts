@@ -2,13 +2,14 @@ import { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR } from './bootstra
 export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
 
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
-import { NostrClient } from '../nostr/index.js';
+import { NostrClient } from '../channels/nostr/index.js';
 import { FileStore } from '../memory/index.js';
+import { Workspace } from './workspace.js';
 
 import type {
   VoltClawAgentOptions,
   LLMProvider,
-  Transport,
+  Channel,
   Store,
   Tool,
   Middleware,
@@ -24,7 +25,7 @@ import type {
   MessageMeta,
   ToolCallResult,
   LLMConfig,
-  TransportConfig,
+  ChannelConfig,
   PersistenceConfig
 } from './types.js';
 import {
@@ -50,8 +51,10 @@ interface AgentState {
 
 export class VoltClawAgent {
   private readonly llm: LLMProvider;
-  private readonly transport: Transport;
+  private readonly channel: Channel;
   private readonly store: Store;
+  private readonly workspace: Workspace;
+  private workspaceContext: string = '';
   private readonly tools: Map<string, Tool> = new Map();
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
@@ -78,8 +81,11 @@ export class VoltClawAgent {
 
   constructor(options: VoltClawAgentOptions = {}) {
     this.llm = this.resolveLLM(options.llm);
-    this.transport = this.resolveTransport(options.transport);
+    // Backward compatibility for 'transport' option
+    const channelOption = options.channel ?? options.transport;
+    this.channel = this.resolveChannel(channelOption);
     this.store = this.resolveStore(options.persistence);
+    this.workspace = new Workspace();
     
     this.maxDepth = options.call?.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.maxCalls = options.call?.maxCalls ?? DEFAULT_MAX_CALLS;
@@ -122,15 +128,15 @@ export class VoltClawAgent {
     throw new ConfigurationError('Invalid LLM configuration');
   }
 
-  private resolveTransport(transport: VoltClawAgentOptions['transport']): Transport {
-    if (!transport) {
-      throw new ConfigurationError('Transport is required');
+  private resolveChannel(channel: VoltClawAgentOptions['channel']): Channel {
+    if (!channel) {
+      throw new ConfigurationError('Channel is required');
     }
-    if (typeof transport === 'object' && 'subscribe' in transport && typeof transport.subscribe === 'function') {
-      return transport as Transport;
+    if (typeof channel === 'object' && 'subscribe' in channel && typeof channel.subscribe === 'function') {
+      return channel as Channel;
     }
-    if (typeof transport === 'object' && 'type' in transport) {
-      const config = transport as import('./types.js').TransportConfig;
+    if (typeof channel === 'object' && 'type' in channel) {
+      const config = channel as import('./types.js').ChannelConfig;
       if (config.type === 'nostr') {
         return new NostrClient({
           relays: config.relays ?? [],
@@ -138,7 +144,7 @@ export class VoltClawAgent {
         });
       }
     }
-    throw new ConfigurationError('Invalid transport configuration');
+    throw new ConfigurationError('Invalid channel configuration');
   }
 
   private resolveStore(persistence: VoltClawAgentOptions['persistence']): Store {
@@ -186,14 +192,16 @@ export class VoltClawAgent {
     try {
         await bootstrap();
         this.systemPromptTemplate = await loadSystemPrompt();
+        await this.workspace.ensureExists();
+        this.workspaceContext = await this.workspace.loadContext();
     } catch (e) {
         this.logger.warn("Failed to bootstrap configuration", { error: String(e) });
     }
 
-    await this.transport.start();
+    await this.channel.start();
     await this.store.load?.();
 
-    this.transportUnsubscribe = this.transport.subscribe(
+    this.transportUnsubscribe = this.channel.subscribe(
       async (from: string, content: string, meta: MessageMeta) => {
         await this.handleMessage(from, content, meta);
       }
@@ -223,7 +231,7 @@ export class VoltClawAgent {
       this.pruneTimer = undefined;
     }
 
-    await this.transport.stop();
+    await this.channel.stop();
     await this.store.save?.();
 
     this.state.isRunning = false;
@@ -310,7 +318,7 @@ export class VoltClawAgent {
       return;
     }
 
-    const isSelf = from === this.transport.identity.publicKey;
+    const isSelf = from === this.channel.identity.publicKey;
     const session = this.store.get(isSelf ? 'self' : from, isSelf);
 
     const ctx: MessageContext = {
@@ -402,7 +410,7 @@ export class VoltClawAgent {
     this.pruneHistory(session);
     await this.store.save?.();
 
-    await this.transport.send(from, reply);
+    await this.channel.send(from, reply);
     
     const replyCtx: ReplyContext = {
       to: from,
@@ -451,8 +459,8 @@ Parent context: ${contextSummary}${mustFinish}`;
       });
       
       const result = response.content || '[no content]';
-      await this.transport.send(
-        this.transport.identity.publicKey,
+      await this.channel.send(
+        this.channel.identity.publicKey,
         JSON.stringify({ type: 'subtask_result', subId, result })
       );
 
@@ -465,8 +473,8 @@ Parent context: ${contextSummary}${mustFinish}`;
       await this.hooks.onCall?.(callCtx);
       this.emit('call', callCtx);
     } catch (error) {
-      await this.transport.send(
-        this.transport.identity.publicKey,
+      await this.channel.send(
+        this.channel.identity.publicKey,
         JSON.stringify({ type: 'subtask_result', subId, error: String(error) })
       );
     }
@@ -608,7 +616,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       depth
     });
 
-    await this.transport.send(this.transport.identity.publicKey, payload);
+    await this.channel.send(this.channel.identity.publicKey, payload);
     await this.store.save?.();
 
     // Wait for result
@@ -687,7 +695,7 @@ Parent context: ${contextSummary}${mustFinish}`;
         depth
       });
 
-      await this.transport.send(this.transport.identity.publicKey, payload);
+      await this.channel.send(this.channel.identity.publicKey, payload);
 
       // Wait for result
       try {
@@ -788,7 +796,8 @@ You are persistent, efficient, and recursive.`;
         .replace('{maxDepth}', String(this.maxDepth))
         .replace('{budget}', String(this.budgetUSD))
         .replace('{tools}', toolNamesStr)
-        .replace('{depthWarning}', depthWarning);
+        .replace('{depthWarning}', depthWarning)
+        + this.workspaceContext;
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {
@@ -891,13 +900,18 @@ class VoltClawAgentBuilder {
     return this;
   }
 
-  withTransport(transport: Transport | TransportConfig | ((b: TransportBuilder) => TransportBuilder)): this {
-    if (typeof transport === 'function') {
-      this.options.transport = transport(new TransportBuilder()).build();
+  withChannel(channel: Channel | ChannelConfig | ((b: ChannelBuilder) => ChannelBuilder)): this {
+    if (typeof channel === 'function') {
+      this.options.channel = channel(new ChannelBuilder()).build();
     } else {
-      this.options.transport = transport;
+      this.options.channel = channel;
     }
     return this;
+  }
+
+  // Deprecated alias
+  withTransport(transport: Channel | ChannelConfig | ((b: ChannelBuilder) => ChannelBuilder)): this {
+    return this.withChannel(transport);
   }
 
   withPersistence(store: Store): this {
@@ -967,8 +981,8 @@ class LLMBuilder {
   }
 }
 
-class TransportBuilder {
-  private config: Partial<import('./types.js').TransportConfig> = {};
+class ChannelBuilder {
+  private config: Partial<import('./types.js').ChannelConfig> = {};
 
   nostr(): this {
     this.config.type = 'nostr';
@@ -1000,13 +1014,16 @@ class TransportBuilder {
     return this;
   }
 
-  build(): import('./types.js').TransportConfig {
+  build(): import('./types.js').ChannelConfig {
     if (!this.config.type) {
-      throw new ConfigurationError('Transport type is required');
+      throw new ConfigurationError('Channel type is required');
     }
-    return this.config as import('./types.js').TransportConfig;
+    return this.config as import('./types.js').ChannelConfig;
   }
 }
+
+// Deprecated alias
+class TransportBuilder extends ChannelBuilder {}
 
 class CallBuilder {
   private config: import('./types.js').CallConfig = {};

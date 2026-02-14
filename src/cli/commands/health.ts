@@ -1,6 +1,6 @@
 import { type LLMProvider, type LLMConfig } from '../../core/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
-import { NostrClient } from '../../nostr/index.js';
+import { NostrClient } from '../../channels/nostr/index.js';
 import { loadConfig, loadOrGenerateKeys, type CLIConfig } from '../config.js';
 import { FileStore } from '../../memory/index.js';
 import path from 'path';
@@ -60,23 +60,23 @@ async function checkLLM(config: CLIConfig['llm']): Promise<HealthCheck> {
   }
 }
 
-async function checkTransport(relays: string[]): Promise<HealthCheck> {
+async function checkChannel(relays: string[]): Promise<HealthCheck> {
   try {
     const keys = await loadOrGenerateKeys();
-    const transport = new NostrClient({ relays, privateKey: keys.secretKey });
+    const channel = new NostrClient({ relays, privateKey: keys.secretKey });
     const start = Date.now();
-    await transport.start();
+    await channel.start();
     const latency = Date.now() - start;
-    await transport.stop();
+    await channel.stop();
 
     return {
-      name: 'Transport',
+      name: 'Channel',
       healthy: true,
       message: `Nostr (${relays.length} relays connected, ${latency}ms latency)`
     };
   } catch (error) {
     return {
-      name: 'Transport',
+      name: 'Channel',
       healthy: false,
       message: `Nostr - ${error instanceof Error ? error.message : 'failed to connect'}`
     };
@@ -114,9 +114,9 @@ export async function healthCommand(json: boolean): Promise<void> {
   const llmCheck = await checkLLM(config.llm);
   checks.push(llmCheck);
 
-  // Transport check
-  const transportCheck = await checkTransport(config.relays);
-  checks.push(transportCheck);
+  // Channel check
+  const channelCheck = await checkChannel(config.relays);
+  checks.push(channelCheck);
 
   // Storage check
   const storageCheck = await checkStorage();

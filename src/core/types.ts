@@ -1,6 +1,7 @@
 export interface VoltClawAgentOptions {
   llm?: LLMProvider | LLMConfig;
-  transport?: Transport | TransportConfig;
+  channel?: Channel | ChannelConfig;
+  transport?: Channel | ChannelConfig; // Deprecated alias
   persistence?: Store | PersistenceConfig;
   call?: CallConfig;
   history?: HistoryConfig;
@@ -23,12 +24,15 @@ export interface RateLimitConfig {
   maxPerMinute: number;
 }
 
-export interface TransportConfig {
+export interface ChannelConfig {
   type: 'nostr' | 'websocket' | 'stdio' | 'memory';
   relays?: string[];
   privateKey?: string;
   port?: number;
 }
+
+// Deprecated alias
+export type TransportConfig = ChannelConfig;
 
 export interface PersistenceConfig {
   type: 'file' | 'sqlite' | 'memory';
@@ -177,7 +181,7 @@ export interface TokenUsage {
   totalTokens?: number;
 }
 
-export interface Transport {
+export interface Channel {
   readonly type: string;
   readonly identity: { publicKey: string };
   start(): Promise<void>;
@@ -186,6 +190,9 @@ export interface Transport {
   subscribe(handler: MessageHandler): Unsubscribe;
   on(event: 'connected' | 'disconnected' | 'error', handler: EventHandler): void;
 }
+
+// Deprecated alias
+export type Transport = Channel;
 
 export type MessageHandler = (
   from: string,

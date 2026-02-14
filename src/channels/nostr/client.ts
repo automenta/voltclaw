@@ -11,11 +11,11 @@ import { RelayPool } from 'nostr-relaypool';
 import { useWebSocketImplementation } from 'nostr-tools/pool';
 import WebSocket from 'ws';
 import type {
-  Transport,
+  Channel,
   MessageHandler,
   MessageMeta,
   QueryFilter,
-  TransportMessage,
+  ChannelMessage,
   NostrEvent,
   Unsubscribe,
   EventHandler
@@ -57,7 +57,7 @@ export function resolveToHex(key: string): string {
   return key;
 }
 
-export class NostrClient implements Transport {
+export class NostrClient implements Channel {
   readonly type = 'nostr';
   readonly identity: { publicKey: string };
   
@@ -159,9 +159,9 @@ export class NostrClient implements Transport {
     };
   }
 
-  async query(filter: QueryFilter): Promise<TransportMessage[]> {
+  async query(filter: QueryFilter): Promise<ChannelMessage[]> {
     return new Promise((resolve) => {
-      const events: TransportMessage[] = [];
+      const events: ChannelMessage[] = [];
       
       const nostrFilter: Record<string, unknown> = {
         kinds: filter.kinds ?? [4],

@@ -1,5 +1,5 @@
 import { VoltClawAgent, type LLMProvider, type MessageContext, type ReplyContext, type ErrorContext } from '../../core/index.js';
-import { NostrClient } from '../../nostr/index.js';
+import { NostrClient } from '../../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
 import { FileStore } from '../../memory/index.js';
 import { createAllTools } from '../../tools/index.js';
@@ -42,7 +42,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
 
   const llm = createLLMProvider(config.llm);
-  const transport = new NostrClient({
+  const channel = new NostrClient({
     relays: config.relays,
     privateKey: keys.secretKey
   });
@@ -51,7 +51,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
 
   const agent = new VoltClawAgent({
     llm,
-    transport,
+    channel,
     persistence: store,
     call: config.call,
     tools,

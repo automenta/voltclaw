@@ -1,4 +1,4 @@
-import { resolveToHex, generateNewKeyPair } from '../nostr/index.js';
+import { resolveToHex, generateNewKeyPair } from '../channels/nostr/index.js';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';

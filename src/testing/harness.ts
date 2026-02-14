@@ -1,4 +1,4 @@
-import { VoltClawAgent, type VoltClawAgentOptions, type LLMProvider, type Transport, type Store, type Session, type Tool, type ChatMessage, type ChatResponse, type ChatOptions, type Unsubscribe, type MessageMeta } from '../core/index.js';
+import { VoltClawAgent, type VoltClawAgentOptions, type LLMProvider, type Channel, type Store, type Session, type Tool, type ChatMessage, type ChatResponse, type ChatOptions, type Unsubscribe, type MessageMeta } from '../core/index.js';
 import { MockRelay, MockClient } from './mock-relay.js';
 import { MockLLM, createMockLLM, type MockLLMConfig } from './mock-llm.js';
 import { getPublicKey, finalizeEvent, nip04 } from 'nostr-tools';
@@ -29,12 +29,12 @@ export class TestHarness {
     const testKey = generateTestKey();
     this.agentPubkey = getPublicKey(testKey);
 
-    const transport = createNostrTransport(this.relay.url, testKey);
+    const channel = createNostrChannel(this.relay.url, testKey);
     const store = createMemoryStore();
 
     this.agent = new VoltClawAgent({
       llm: this.llm,
-      transport,
+      channel,
       persistence: store,
       call: config.call ?? {
         maxDepth: 2,
@@ -105,7 +105,7 @@ function generateTestKey(): Uint8Array {
   return key;
 }
 
-function createNostrTransport(relayUrl: string, secretKey: Uint8Array): Transport {
+function createNostrChannel(relayUrl: string, secretKey: Uint8Array): Channel {
   const publicKey = getPublicKey(secretKey);
   const pool = new RelayPool();
   pool.addOrGetRelay(relayUrl);

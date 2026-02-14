@@ -1,6 +1,6 @@
-export * from '../core/types.js';
+export * from '../../core/types.js';
 
-export interface TransportMessage {
+export interface ChannelMessage {
   id: string;
   from: string;
   to: string;
@@ -8,6 +8,9 @@ export interface TransportMessage {
   timestamp: number;
   kind: number;
 }
+
+// Deprecated alias
+export type TransportMessage = ChannelMessage;
 
 export interface QueryFilter {
   kinds?: number[];

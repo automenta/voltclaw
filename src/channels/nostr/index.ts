@@ -1,10 +1,12 @@
 export { NostrClient, generateNewKeyPair, resolveToHex, type NostrClientOptions } from './client.js';
 export type {
-  Transport,
+  Channel,
+  Transport, // Deprecated alias
   MessageHandler,
   MessageMeta,
   QueryFilter,
-  TransportMessage,
+  ChannelMessage,
+  TransportMessage, // Deprecated alias
   NostrEvent,
   Unsubscribe,
   EventHandler

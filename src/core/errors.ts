@@ -38,17 +38,25 @@ export class LLMRateLimitError extends LLMError {
   }
 }
 
-export class TransportError extends VoltClawError {
-  public readonly transportType?: string;
+export class ChannelError extends VoltClawError {
+  public readonly channelType?: string;
 
-  constructor(message: string, transportType?: string) {
-    super(message, 'TRANSPORT_ERROR');
-    this.name = 'TransportError';
-    this.transportType = transportType;
+  constructor(message: string, channelType?: string) {
+    super(message, 'CHANNEL_ERROR');
+    this.name = 'ChannelError';
+    this.channelType = channelType;
   }
 }
 
-export class DecryptionError extends TransportError {
+// Deprecated alias
+export class TransportError extends ChannelError {
+  constructor(message: string, transportType?: string) {
+    super(message, transportType);
+    this.name = 'TransportError';
+  }
+}
+
+export class DecryptionError extends ChannelError {
   constructor(message: string) {
     super(message, 'nostr');
     this.name = 'DecryptionError';
@@ -144,7 +152,7 @@ export function isRetryable(error: unknown): boolean {
   if (error instanceof LLMRateLimitError) return true;
   if (error instanceof TimeoutError) return true;
   if (error instanceof CircuitOpenError) return false;
-  if (error instanceof TransportError) return true;
+  if (error instanceof ChannelError) return true;
   if (error instanceof LLMError) return true;
   return false;
 }
