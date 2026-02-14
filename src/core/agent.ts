@@ -32,6 +32,7 @@ import {
   ConfigurationError,
   MaxDepthExceededError,
   BudgetExceededError,
+  TimeoutError,
   isRetryable
 } from './errors.js';
 
@@ -479,14 +480,20 @@ Parent context: ${contextSummary}${mustFinish}`;
     const sub = session.subTasks[subId];
     if (!sub) return;
 
+    if (sub.timer) {
+      clearTimeout(sub.timer);
+    }
+
     sub.arrived = true;
     if (parsed.error) {
       sub.error = parsed.error as string;
+      sub.reject?.(new Error(sub.error));
     } else {
       sub.result = parsed.result as string;
       const addedTokens = Math.ceil((sub.result?.length ?? 0) / 4);
       session.actualTokensUsed += addedTokens;
       session.estCostUSD += (addedTokens / 1000) * 0.0005;
+      sub.resolve?.(sub.result);
     }
 
     await this.store.save?.();
@@ -575,7 +582,9 @@ Parent context: ${contextSummary}${mustFinish}`;
     session.subTasks[subId] = {
       createdAt: Date.now(),
       task,
-      arrived: false
+      arrived: false,
+      resolve: undefined,
+      reject: undefined
     };
 
     const payload = JSON.stringify({
@@ -590,7 +599,44 @@ Parent context: ${contextSummary}${mustFinish}`;
     await this.transport.send(this.transport.identity.publicKey, payload);
     await this.store.save?.();
 
-    return { status: 'delegated', subId, depth, estCost: estNewCost };
+    // Wait for result
+    try {
+      const result = await this.waitForSubtaskResult(subId, session);
+      return { status: 'completed', result, subId, depth };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        subId
+      };
+    }
+  }
+
+  private async waitForSubtaskResult(
+    subId: string,
+    session: Session,
+    timeoutMs: number = this.timeoutMs
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sub = session.subTasks[subId];
+      if (!sub) {
+        reject(new Error(`Subtask ${subId} not found`));
+        return;
+      }
+
+      // Store resolvers for handleSubtaskResult to call
+      sub.resolve = resolve;
+      sub.reject = reject;
+
+      // Timeout
+      const timer = setTimeout(() => {
+        sub.arrived = true;
+        sub.error = `Timeout after ${timeoutMs}ms`;
+        reject(new TimeoutError(timeoutMs, `Subtask ${subId} timed out`));
+      }, timeoutMs);
+
+      // Store timer for cleanup
+      sub.timer = timer;
+    });
   }
 
   private buildSystemPrompt(depth: number): string {
