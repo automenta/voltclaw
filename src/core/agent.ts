@@ -8,6 +8,7 @@ import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
+import { DeadLetterQueue, InMemoryDLQ } from './dlq.js';
 
 import type {
   VoltClawAgentOptions,
@@ -72,6 +73,7 @@ export class VoltClawAgent {
   private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly retrier: Retrier;
   private readonly fallbacks: Record<string, string>;
+  public readonly dlq: DeadLetterQueue;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -125,6 +127,9 @@ export class VoltClawAgent {
     this.retrier = new Retrier(retryConfig);
 
     this.fallbacks = options.fallbacks ?? {};
+
+    // DLQ initialization (currently only memory supported)
+    this.dlq = new DeadLetterQueue();
 
     if (options.tools) {
       this.registerTools(options.tools);
@@ -744,7 +749,13 @@ Parent context: ${contextSummary}${mustFinish}`;
       );
       return result as ToolCallResult;
     } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) };
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      // If we reach here, it means retries failed, circuit breaker failed (or open), and fallback failed (or missing).
+      // Push to DLQ.
+      await this.dlq.push(name, args, err);
+
+      return { error: err.message };
     }
   }
 

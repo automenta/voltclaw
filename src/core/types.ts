@@ -14,6 +14,12 @@ export interface VoltClawAgentOptions {
   circuitBreaker?: CircuitBreakerConfig;
   retry?: RetryConfig;
   fallbacks?: Record<string, string>;
+  dlq?: DLQConfig;
+}
+
+export interface DLQConfig {
+  type: 'memory' | 'file';
+  path?: string;
 }
 
 export interface RetryConfig {
