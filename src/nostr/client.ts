@@ -39,6 +39,24 @@ function decodePrivateKey(key: string): Uint8Array {
   return Uint8Array.from(Buffer.from(key, 'hex'));
 }
 
+export function resolveToHex(key: string): string {
+  if (key.startsWith('npub')) {
+    const decoded = nip19.decode(key);
+    if (decoded.type !== 'npub') {
+      throw new Error('Invalid npub key');
+    }
+    return decoded.data as string;
+  }
+  if (key.startsWith('nsec')) {
+    const decoded = nip19.decode(key);
+    if (decoded.type !== 'nsec') {
+      throw new Error('Invalid nsec key');
+    }
+    return Buffer.from(decoded.data).toString('hex');
+  }
+  return key;
+}
+
 export class NostrClient implements Transport {
   readonly type = 'nostr';
   readonly identity: { publicKey: string };

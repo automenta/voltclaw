@@ -4,1349 +4,1329 @@
 
 **One agent. Any task. Endless depth. Zero friction.**
 
-VoltClaw aims to become the de facto standard for recursive autonomous agents in TypeScript/Node.js. Success requires:
-
-1. **Zero-config startup** - Works instantly, configures later
-2. **Progressive complexity** - Simple for hello-world, powerful for production
-3. **Ubiquitous integration** - CLI, programmatic, Docker, serverless, edge
-4. **Bulletproof reliability** - Graceful degradation, circuit breakers, auto-recovery
-5. **Intuitive ergonomics** - Self-documenting, discoverable, predictable
-6. **Extensible by design** - Hooks, plugins, middleware at every layer
+VoltClaw is a recursive autonomous agent platform enabling self-evolving AI systems through:
+- **Recursive delegation** - Agents spawn sub-agents for complex tasks
+- **Decentralized communication** - Nostr-native encrypted messaging
+- **Tool extensibility** - File ops, HTTP, custom tools, self-modification
+- **LLM agnosticism** - Ollama, OpenAI, Anthropic, or custom providers
 
 ---
 
-## Project Structure
+## Table of Contents
 
-```
-voltclaw/
-├── packages/
-│   ├── voltclaw/                    # Core agent library
-│   │   ├── src/
-│   │   │   ├── index.ts             # Public API surface
-│   │   │   ├── agent.ts             # VoltClawAgent class
-│   │   │   ├── errors.ts            # Typed error hierarchy
-│   │   │   └── types.ts             # Public type definitions
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   ├── @voltclaw/nostr/             # Nostr transport layer
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── client.ts            # NostrClient implementation
-│   │   │   ├── encryption.ts        # NIP-04/17 abstraction
-│   │   │   ├── relay-pool.ts        # Relay management
-│   │   │   └── event.ts             # Event creation/validation
-│   │   └── package.json
-│   │
-│   ├── @voltclaw/llm/               # LLM abstraction layer
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── provider.ts          # Provider interface
-│   │   │   ├── ollama.ts            # Ollama provider
-│   │   │   ├── openai.ts            # OpenAI provider
-│   │   │   ├── anthropic.ts         # Anthropic provider
-│   │   │   ├── rate-limiter.ts      # Token bucket rate limiting
-│   │   │   └── tokenizer.ts         # Token counting utilities
-│   │   └── package.json
-│   │
-│   ├── @voltclaw/tools/             # Built-in tool library
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── registry.ts          # Tool registry
-│   │   │   ├── delegate.ts          # Recursive delegation
-│   │   │   ├── time.ts
-│   │   │   ├── http.ts              # HTTP requests
-│   │   │   ├── shell.ts             # Shell execution (opt-in)
-│   │   │   └── memory.ts            # Long-term memory tools
-│   │   └── package.json
-│   │
-│   ├── @voltclaw/memory/            # Persistence layer
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── manager.ts           # Session/memory manager
-│   │   │   ├── store.ts             # Store interface
-│   │   │   ├── file-store.ts        # File-based persistence
-│   │   │   ├── sqlite-store.ts      # SQLite persistence
-│   │   │   └── redis-store.ts       # Redis persistence (optional)
-│   │   └── package.json
-│   │
-│   ├── @voltclaw/cli/               # Command-line interface
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── commands/
-│   │   │   │   ├── start.ts         # voltclaw start
-│   │   │   │   ├── config.ts        # voltclaw config
-│   │   │   │   ├── keys.ts          # voltclaw keys
-│   │   │   │   ├── dm.ts            # voltclaw dm <npub> <msg>
-│   │   │   │   └── skill.ts         # voltclaw skill install/list
-│   │   │   └── interactive.ts       # REPL mode
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   └── @voltclaw/testing/           # Testing utilities
-│       ├── src/
-│       │   ├── index.ts
-│       │   ├── mock-relay.ts        # In-memory test relay
-│       │   ├── mock-llm.ts          # Deterministic LLM mock
-│       │   ├── fixtures.ts          # Test data factories
-│       │   └── harness.ts           # Integration test harness
-│       └── package.json
-│
-├── examples/
-│   ├── 00-hello-world.ts            # Minimal usage
-│   ├── 01-basic-agent.ts            # Single agent
-│   ├── 02-custom-llm.ts             # Custom provider
-│   ├── 03-custom-tools.ts           # Adding tools
-│   ├── 04-custom-transport.ts       # Non-Nostr transport
-│   ├── 05-middleware.ts             # Request/response middleware
-│   ├── 06-hooks.ts                  # Lifecycle hooks
-│   ├── 07-persistence.ts            # SQLite storage
-│   ├── 08-multi-session.ts          # Multiple agents
-│   ├── 09-cli-usage.ts              # CLI integration
-│   └── 10-production.ts             # Full production setup
-│
-├── docs/
-│   ├── getting-started.md
-│   ├── configuration.md
-│   ├── api-reference.md
-│   ├── tools.md
-│   ├── llm-providers.md
-│   ├── transports.md
-│   ├── persistence.md
-│   ├── hooks-middleware.md
-│   ├── testing.md
-│   ├── deployment.md
-│   └── migration-guide.md
-│
-├── test/
-│   ├── setup.ts
-│   ├── unit/
-│   │   ├── agent.test.ts
-│   │   ├── tools.test.ts
-│   │   └── memory.test.ts
-│   └── integration/
-│       ├── basic-reply.test.ts
-│       ├── delegation.test.ts
-│       ├── error-recovery.test.ts
-│       └── persistence.test.ts
-│
-├── package.json                     # Monorepo root
-├── pnpm-workspace.yaml              # pnpm workspaces
-├── tsconfig.json                    # Base TypeScript config
-├── tsconfig.build.json              # Production build config
-├── vitest.config.ts                 # Test configuration
-├── vitest.workspace.ts              # Workspace test config
-├── eslint.config.js                 # ESLint flat config
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                   # Test, lint, typecheck
-│       ├── release.yml              # Automated releases
-│       └── docs.yml                 # Deploy docs
-│
-├── Dockerfile                       # Production container
-├── docker-compose.yml               # Local dev stack
-└── README.md
-```
+1. [Completed Features](#completed-features)
+2. [Phase 1: Critical Fixes](#phase-1-critical-fixes)
+3. [Phase 2: Tool Expansion](#phase-2-tool-expansion)
+4. [Phase 3: User Experience](#phase-3-user-experience)
+5. [Phase 4: Production Ready](#phase-4-production-ready)
+6. [Phase 5: Ecosystem](#phase-5-ecosystem)
+7. [Architecture Reference](#architecture-reference)
+8. [Testing Strategy](#testing-strategy)
+9. [Success Metrics](#success-metrics)
 
 ---
 
-## Phase 1: Core Architecture
+## Completed Features
 
-### 1.1 VoltClawAgent Class
+### Core Architecture
 
-The single entry point for all agent interactions:
+| Component | Status | File |
+|-----------|--------|------|
+| `VoltClawAgent` class | ✅ | `src/core/agent.ts` |
+| Transport abstraction | ✅ | `src/nostr/client.ts` |
+| LLM provider abstraction | ✅ | `src/llm/provider.ts` |
+| Tool registry | ✅ | `src/tools/registry.ts` |
+| FileStore persistence | ✅ | `src/memory/file-store.ts` |
+| Session management | ✅ | `src/core/agent.ts:202-211` |
+| Builder API | ✅ | `src/core/agent.ts:691-846` |
+| Middleware pipeline | ✅ | `src/core/types.ts:93-104` |
+| Lifecycle hooks | ✅ | `src/core/types.ts:54-59` |
+
+### Built-in Tools
+
+| Tool | Description | Status | File |
+|------|-------------|--------|------|
+| `read_file` | Read file contents | ✅ | `src/tools/files.ts:15-34` |
+| `write_file` | Write content to file | ✅ | `src/tools/files.ts:36-56` |
+| `list_files` | List directory contents | ✅ | `src/tools/files.ts:58-77` |
+| `http_get` | HTTP GET requests | ✅ | `src/tools/http.ts` |
+| `http_post` | HTTP POST requests | ✅ | `src/tools/http.ts` |
+| `time` | Get current time | ✅ | `src/tools/time.ts` |
+| `date` | Get current date | ✅ | `src/tools/time.ts` |
+| `sleep` | Pause execution | ✅ | `src/tools/time.ts` |
+| `estimate_tokens` | Token estimation | ✅ | `src/tools/delegate.ts:54-72` |
+| `delegate` | Recursive sub-agent | ✅ | `src/core/agent.ts:546-593` |
+
+### CLI Commands
+
+| Command | Description | Status |
+|---------|-------------|--------|
+| `voltclaw start` | Start agent daemon | ✅ |
+| `voltclaw repl` | Interactive REPL | ✅ |
+| `voltclaw "query"` | One-shot query | ✅ |
+| `voltclaw dm <npub> <msg>` | Send Nostr DM | ✅ |
+| `voltclaw config` | Show configuration | ✅ |
+| `voltclaw keys` | Show identity | ✅ |
+
+### Testing Infrastructure
+
+| Component | Status | File |
+|-----------|--------|------|
+| `MockLLM` | Deterministic LLM mock | ✅ | `src/testing/mock-llm.ts` |
+| `MockRelay` | In-memory test relay | ✅ | `src/testing/mock-relay.ts` |
+| `TestHarness` | Integration harness | ✅ | `src/testing/harness.ts` |
+| Vitest config | Test runner setup | ✅ | `vitest.config.ts` |
+
+### Reliability Features
+
+| Feature | Status | Location |
+|---------|--------|----------|
+| Error hierarchy | ✅ | `src/core/errors.ts` |
+| Retry with backoff | ✅ | `src/core/agent.ts:848-876` |
+| Delegation guardrails | ✅ | `src/core/agent.ts:38-44` |
+| Graceful shutdown | ✅ | `src/cli/index.ts:200-216` |
+
+---
+
+## Phase 1: Critical Fixes
+
+### 1.1 Fix Delegation Result Flow
+
+**Priority:** P0 (Blocking)  
+**Effort:** Medium  
+**Impact:** Critical  
+
+**Problem:** The `delegate` tool sends subtask via transport but never waits for the result. The `handleSubtaskResult` method processes results asynchronously but the tool returns immediately with `{ status: 'delegated' }` instead of the actual result.
+
+**Current Flow (Broken):**
+```
+Agent calls delegate tool
+  → Sends message to self via transport
+  → Returns { status: 'delegated' }
+  → LLM continues without result
+  → Result arrives later via handleMessage
+  → Result goes to session.subTasks[subId]
+  → Never returned to calling context
+```
+
+**Target Flow (Fixed):**
+```
+Agent calls delegate tool
+  → Sends message to self via transport
+  → Waits for result with timeout
+  → Returns { status: 'completed', result: "..." }
+  → LLM receives actual sub-agent output
+```
+
+**Implementation:**
 
 ```typescript
-import { VoltClawAgent } from 'voltclaw';
+// src/core/agent.ts
 
-// Zero-config: Works instantly
-const agent = new VoltClawAgent();
-await agent.start();
+private async executeDelegate(
+  args: Record<string, unknown>,
+  session: Session,
+  from: string
+): Promise<ToolCallResult> {
+  const task = args.task as string;
+  const summary = args.summary as string | undefined;
+  const depth = session.depth + 1;
 
-// Or with explicit config
-const agent = new VoltClawAgent({
-  llm: { provider: 'ollama', model: 'llama3.2' },
-  transport: { type: 'nostr', relays: ['wss://relay.damus.io'] },
-  persistence: { type: 'file', path: '~/.voltclaw' }
+  // Guardrails
+  if (depth > this.maxDepth) {
+    throw new MaxDepthExceededError(this.maxDepth, depth);
+  }
+  if (session.delegationCount >= this.maxCalls) {
+    return { error: 'Max delegations exceeded' };
+  }
+
+  // Cost estimation
+  const estCost = this.estimateDelegationCost(task, summary);
+  if (session.estCostUSD + estCost > this.budgetUSD * 0.8) {
+    throw new BudgetExceededError(this.budgetUSD, session.estCostUSD);
+  }
+
+  session.delegationCount++;
+  session.estCostUSD += estCost;
+
+  const subId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  
+  // Create pending subtask
+  session.subTasks[subId] = {
+    createdAt: Date.now(),
+    task,
+    arrived: false,
+    resolve: undefined,
+    reject: undefined
+  };
+
+  // Send subtask
+  const payload = JSON.stringify({
+    type: 'subtask',
+    parentPubkey: from,
+    subId,
+    task,
+    contextSummary: summary ?? '',
+    depth
+  });
+
+  await this.transport.send(this.transport.identity.publicKey, payload);
+  await this.store.save?.();
+
+  // Wait for result
+  try {
+    const result = await this.waitForSubtaskResult(subId, session);
+    return { status: 'completed', result, subId, depth };
+  } catch (error) {
+    return { 
+      error: error instanceof Error ? error.message : String(error),
+      subId 
+    };
+  }
+}
+
+private async waitForSubtaskResult(
+  subId: string, 
+  session: Session,
+  timeoutMs: number = this.timeoutMs
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const sub = session.subTasks[subId];
+    if (!sub) {
+      reject(new Error(`Subtask ${subId} not found`));
+      return;
+    }
+
+    // Store resolvers for handleSubtaskResult to call
+    sub.resolve = resolve;
+    sub.reject = reject;
+
+    // Timeout
+    const timer = setTimeout(() => {
+      sub.arrived = true;
+      sub.error = `Timeout after ${timeoutMs}ms`;
+      reject(new TimeoutError(`Subtask ${subId} timed out`));
+    }, timeoutMs);
+
+    // Store timer for cleanup
+    sub.timer = timer;
+  });
+}
+
+// Update handleSubtaskResult
+private async handleSubtaskResult(
+  session: Session,
+  parsed: Record<string, unknown>,
+  _from: string
+): Promise<void> {
+  const subId = parsed.subId as string;
+  const sub = session.subTasks[subId];
+  if (!sub) return;
+
+  // Clear timeout
+  if (sub.timer) {
+    clearTimeout(sub.timer);
+  }
+
+  sub.arrived = true;
+  
+  if (parsed.error) {
+    sub.error = parsed.error as string;
+    sub.reject?.(new Error(sub.error));
+  } else {
+    sub.result = parsed.result as string;
+    sub.resolve?.(sub.result);
+  }
+
+  await this.store.save?.();
+}
+```
+
+**SubTaskInfo Update:**
+
+```typescript
+// src/core/types.ts
+
+export interface SubTaskInfo {
+  createdAt: number;
+  task: string;
+  arrived: boolean;
+  result?: string;
+  error?: string;
+  resolve?: (value: string) => void;
+  reject?: (error: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+```
+
+**Acceptance Criteria:**
+- [ ] `delegate` tool returns actual sub-agent result
+- [ ] Timeout handled gracefully with error message
+- [ ] Multiple sequential delegations work correctly
+- [ ] Test: `test/integration/delegation.test.ts`
+
+---
+
+### 1.2 Fix `--recursive` Flag Position
+
+**Priority:** P0  
+**Effort:** Low  
+**Impact:** High  
+
+**Problem:** CLI parser requires flag after query string, which is unintuitive.
+
+```bash
+# Current (confusing)
+voltclaw "query" --recursive
+
+# Expected (natural)
+voltclaw --recursive "query"
+voltclaw -r "query"
+```
+
+**Implementation:**
+
+```typescript
+// src/cli/index.ts
+
+async function run(args: string[]): Promise<void> {
+  // Parse flags first
+  let recursive = false;
+  let verbose = false;
+  let debug = false;
+  let dryRun = false;
+  const positional: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg === '--recursive' || arg === '-r') {
+      recursive = true;
+    } else if (arg === '--verbose' || arg === '-v') {
+      verbose = true;
+    } else if (arg === '--debug' || arg === '-d') {
+      debug = true;
+    } else if (arg === '--dry-run') {
+      dryRun = true;
+    } else if (arg === '--help' || arg === '-h') {
+      printHelp();
+      return;
+    } else if (!arg.startsWith('-')) {
+      positional.push(arg);
+    }
+  }
+
+  // Handle commands
+  const command = positional[0];
+  
+  if (!command) {
+    printHelp();
+    return;
+  }
+
+  // One-shot query mode
+  if (!['start', 'repl', 'keys', 'config', 'dm', 'health', 'session'].includes(command)) {
+    const query = positional.join(' ');
+    await oneShotQuery(query, { recursive, verbose, debug, dryRun });
+    return;
+  }
+
+  // ... rest of command handling
+}
+```
+
+**Acceptance Criteria:**
+- [ ] `voltclaw -r "query"` works
+- [ ] `voltclaw --recursive "query"` works
+- [ ] Flags work in any order
+- [ ] Test: `test/unit/cli.test.ts`
+
+---
+
+### 1.3 Progress Indicators
+
+**Priority:** P1  
+**Effort:** Low  
+**Impact:** High  
+
+**Problem:** Long-running recursive tasks have no feedback, making agent appear frozen.
+
+**Implementation:**
+
+```typescript
+// src/cli/index.ts
+
+async function oneShotQuery(
+  query: string, 
+  options: { recursive: boolean; verbose: boolean; debug: boolean; dryRun: boolean }
+): Promise<void> {
+  const config = await loadConfig();
+  const keys = await loadOrGenerateKeys();
+  const llm = createLLMProvider(config.llm);
+  const transport = new NostrClient({ relays: config.relays, privateKey: keys.secretKey });
+  const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
+  const tools = await createAllTools();
+
+  const agent = new VoltClawAgent({
+    llm,
+    transport,
+    persistence: store,
+    delegation: options.recursive ? config.delegation : { ...config.delegation, maxDepth: 1 },
+    tools,
+    hooks: {
+      onDelegation: options.recursive ? (ctx) => {
+        const indicator = options.verbose ? ctx.task.slice(0, 60) : '';
+        console.log(`  → [Depth ${ctx.depth}] Delegating... ${indicator}`);
+      } : undefined
+    }
+  });
+
+  // Verbose mode: show tool calls
+  if (options.verbose) {
+    agent.on('tool_call' as any, ({ tool, args }: any) => {
+      const argsStr = JSON.stringify(args).slice(0, 80);
+      console.log(`  ⚙ [Tool] ${tool}(${argsStr})`);
+    });
+  }
+
+  await agent.start();
+
+  try {
+    console.log(`\n❯ ${query}\n`);
+    const response = await agent.query(query);
+    console.log(`\n${response}\n`);
+  } finally {
+    await agent.stop();
+  }
+}
+```
+
+**Output Example:**
+```
+❯ Analyze this codebase with recursive delegation
+
+  → [Depth 1] Delegating... Summarize core module
+  → [Depth 1] Delegating... Summarize llm module
+  → [Depth 1] Delegating... Summarize nostr module
+  ⚙ [Tool] read_file({"path":"src/core/types.ts"})
+
+**Module Summaries:**
+...
+```
+
+**Acceptance Criteria:**
+- [ ] Shows delegation depth and task preview
+- [ ] `--verbose` shows all tool calls
+- [ ] Non-verbose mode shows minimal output
+- [ ] Works in REPL mode too
+
+---
+
+## Phase 2: Tool Expansion
+
+### 2.1 `grep` Tool
+
+**Priority:** P1  
+**Effort:** Low  
+
+Search file contents with regex patterns.
+
+```typescript
+// src/tools/grep.ts
+
+import { z } from 'zod';
+import { readFile } from 'fs/promises';
+import { glob } from 'glob';
+import type { Tool, ToolCallResult } from './types.js';
+
+const GrepSchema = z.object({
+  pattern: z.string().describe('Regex pattern to search for'),
+  path: z.string().optional().default('.').describe('File or directory to search'),
+  ignoreCase: z.boolean().optional().default(false).describe('Case insensitive'),
+  include: z.string().optional().describe('Glob pattern for files to include (e.g., *.ts)'),
+  maxMatches: z.number().optional().default(100).describe('Maximum matches to return')
 });
 
-// Listen for messages
-agent.on('message', (msg) => console.log(msg));
-
-// Programmatic interaction
-const response = await agent.query('What is the capital of France?');
-
-// Graceful shutdown
-await agent.stop();
-```
-
-### 1.2 Agent Options Interface
-
-```typescript
-interface VoltClawAgentOptions {
-  // LLM Configuration
-  llm?: LLMMProvider | {
-    provider: 'ollama' | 'openai' | 'anthropic';
-    model: string;
-    baseUrl?: string;
-    apiKey?: string;
-    rateLimit?: { maxPerMinute: number };
-  };
-
-  // Transport Layer
-  transport?: Transport | {
-    type: 'nostr' | 'websocket' | 'stdio' | 'memory';
-    // Nostr-specific
-    relays?: string[];
-    privateKey?: string;
-    // WebSocket-specific  
-    port?: number;
-  };
-
-  // Persistence
-  persistence?: Store | {
-    type: 'file' | 'sqlite' | 'memory';
-    path?: string;
-  };
-
-  // Delegation Guardrails
-  delegation?: {
-    maxDepth?: number;           // default: 4
-    maxCalls?: number;           // default: 25
-    budgetUSD?: number;          // default: 0.75
-    timeoutMs?: number;          // default: 600000
-  };
-
-  // History & Memory
-  history?: {
-    maxMessages?: number;        // default: 60
-    autoPruneInterval?: number;  // default: 300000
-  };
-
-  // Tools
-  tools?: Tool[] | {
-    builtins?: string[];         // ['delegate', 'time', 'http']
-    directories?: string[];      // Custom skill directories
-  };
-
-  // Hooks
-  hooks?: {
-    onMessage?: (ctx: MessageContext) => Promise<void>;
-    onReply?: (ctx: ReplyContext) => Promise<void>;
-    onDelegation?: (ctx: DelegationContext) => Promise<void>;
-    onError?: (ctx: ErrorContext) => Promise<void>;
-  };
-
-  // Middleware
-  middleware?: Middleware[];
-
-  // Logging
-  logger?: Logger | {
-    level?: 'debug' | 'info' | 'warn' | 'error';
-    format?: 'pretty' | 'json';
-  };
-}
-```
-
-### 1.3 Transport Abstraction
-
-Enable any bidirectional messaging system:
-
-```typescript
-interface Transport {
-  readonly type: string;
-  readonly identity: { publicKey: string };
-  
-  // Lifecycle
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  
-  // Messaging
-  send(to: string, content: string): Promise<void>;
-  subscribe(handler: MessageHandler): Unsubscribe;
-  
-  // Optional: Query historical messages
-  query?(filter: QueryFilter): Promise<Message[]>;
-  
-  // Events
-  on(event: 'connected' | 'disconnected' | 'error', handler: Function): void;
-}
-
-type MessageHandler = (from: string, content: string, meta: MessageMeta) => Promise<void>;
-```
-
-### 1.4 LLM Provider Abstraction
-
-Support any LLM backend:
-
-```typescript
-interface LLMProvider {
-  readonly name: string;
-  readonly model: string;
-  
-  chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse>;
-  
-  // Optional: Streaming support
-  stream?(messages: Message[], options?: ChatOptions): AsyncIterable<ChatChunk>;
-  
-  // Optional: Token counting
-  countTokens?(text: string): number;
-  
-  // Optional: Tool/function calling
-  supportsTools?: boolean;
-}
-
-interface ChatOptions {
-  tools?: ToolDefinition[];
-  maxTokens?: number;
-  temperature?: number;
-  stopSequences?: string[];
-}
-
-interface ChatResponse {
+interface GrepMatch {
+  file: string;
+  line: number;
   content: string;
-  toolCalls?: ToolCall[];
-  usage?: { promptTokens: number; completionTokens: number };
+  match: string;
 }
-```
 
----
-
-## Phase 2: Reliability Engineering
-
-### 2.1 Circuit Breaker Pattern
-
-Prevent cascade failures:
-
-```typescript
-class CircuitBreaker {
-  private failures = 0;
-  private state: 'closed' | 'open' | 'half-open' = 'closed';
-  private lastFailureTime = 0;
-  
-  constructor(
-    private threshold = 5,
-    private resetTimeoutMs = 30000
-  ) {}
-  
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.state === 'open') {
-      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
-        this.state = 'half-open';
-      } else {
-        throw new CircuitOpenError('Circuit breaker is open');
-      }
+export const grepTool: Tool = {
+  name: 'grep',
+  description: 'Search for regex patterns in files. Returns matching lines with file path and line number.',
+  parameters: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: 'Regex pattern to search for' },
+      path: { type: 'string', description: 'File or directory to search (default: current directory)' },
+      ignoreCase: { type: 'boolean', description: 'Case insensitive search' },
+      include: { type: 'string', description: 'Glob pattern for files to include (e.g., *.ts)' },
+      maxMatches: { type: 'number', description: 'Maximum matches to return (default: 100)' }
+    },
+    required: ['pattern']
+  },
+  execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+    const parsed = GrepSchema.safeParse(args);
+    if (!parsed.success) {
+      return { error: `Invalid arguments: ${parsed.error.issues[0].message}` };
     }
+
+    const { pattern, path, ignoreCase, include, maxMatches } = parsed.data;
     
     try {
-      const result = await fn();
-      this.onSuccess();
-      return result;
-    } catch (err) {
-      this.onFailure();
-      throw err;
-    }
-  }
-  
-  private onSuccess() {
-    this.failures = 0;
-    this.state = 'closed';
-  }
-  
-  private onFailure() {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-    if (this.failures >= this.threshold) {
-      this.state = 'open';
-    }
-  }
-}
-```
-
-### 2.2 Retry with Exponential Backoff
-
-```typescript
-interface RetryOptions {
-  maxAttempts: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
-  multiplier: number;
-  jitter: boolean;
-}
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions
-): Promise<T> {
-  let lastError: Error;
-  
-  for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err as Error;
+      const regex = new RegExp(pattern, ignoreCase ? 'gi' : 'g');
+      const matches: GrepMatch[] = [];
       
-      if (attempt === options.maxAttempts) break;
-      if (!isRetryable(err)) break;
-      
-      const delay = calculateBackoff(attempt, options);
-      await sleep(delay);
-    }
-  }
-  
-  throw lastError;
-}
+      // Find files to search
+      const pattern_ = include || '**/*';
+      const files = await glob(pattern_, { 
+        cwd: path, 
+        nodir: true, 
+        ignore: ['node_modules/**', 'dist/**', '.git/**']
+      });
 
-function calculateBackoff(attempt: number, options: RetryOptions): number {
-  const delay = Math.min(
-    options.baseDelayMs * Math.pow(options.multiplier, attempt - 1),
-    options.maxDelayMs
-  );
-  
-  if (options.jitter) {
-    return delay * (0.5 + Math.random());
-  }
-  return delay;
-}
-```
-
-### 2.3 Graceful Degradation
-
-When LLM is unavailable, agent still functions:
-
-```typescript
-class VoltClawAgent {
-  private fallbackHandlers = new Map<string, FallbackHandler>();
-  
-  registerFallback(pattern: string | RegExp, handler: FallbackHandler) {
-    this.fallbackHandlers.set(pattern.toString(), handler);
-  }
-  
-  private async handleWithFallback(msg: string): Promise<string> {
-    // Try LLM first
-    try {
-      return await this.llm.chat([{ role: 'user', content: msg }]);
-    } catch (err) {
-      this.logger.warn('LLM unavailable, checking fallbacks', { error: err });
-      
-      // Check fallback handlers
-      for (const [pattern, handler] of this.fallbackHandlers) {
-        if (new RegExp(pattern).test(msg)) {
-          return handler(msg);
+      for (const file of files) {
+        if (matches.length >= maxMatches) break;
+        
+        try {
+          const content = await readFile(`${path}/${file}`, 'utf-8');
+          const lines = content.split('\n');
+          
+          for (let i = 0; i < lines.length && matches.length < maxMatches; i++) {
+            const line = lines[i];
+            const match = line.match(regex);
+            if (match) {
+              matches.push({
+                file,
+                line: i + 1,
+                content: line.slice(0, 200),
+                match: match[0]
+              });
+            }
+          }
+        } catch {
+          // Skip unreadable files
         }
       }
-      
-      // Default fallback
-      return 'I am currently experiencing technical difficulties. ' +
-             'Please try again in a moment.';
+
+      return { 
+        matches,
+        count: matches.length,
+        truncated: matches.length >= maxMatches
+      };
+    } catch (error) {
+      return { error: `Invalid regex pattern: ${pattern}` };
     }
   }
-}
-```
-
-### 2.4 Session Recovery
-
-Resume interrupted sessions:
-
-```typescript
-class SessionRecovery {
-  async recover(agent: VoltClawAgent): Promise<void> {
-    const pending = await this.store.getPendingSubtasks();
-    
-    for (const subtask of pending) {
-      const age = Date.now() - subtask.createdAt;
-      
-      if (age > agent.config.delegation.timeoutMs) {
-        await this.markTimedOut(subtask);
-      } else {
-        await this.resubscribe(subtask);
-      }
-    }
-    
-    agent.logger.info('Session recovery complete', { 
-      recovered: pending.length 
-    });
-  }
-}
-```
-
----
-
-## Phase 3: Ergonomics & Developer Experience
-
-### 3.1 Zero-Config Bootstrap
-
-```typescript
-// The simplest possible usage
-import 'voltclaw/auto';
-
-// Creates agent, loads config from env/files, starts listening
-// Equivalent to running `voltclaw start` from CLI
-```
-
-### 3.2 Environment Variable Convention
-
-All options configurable via environment:
-
-```bash
-# LLM
-VOLTCLAW_LLM_PROVIDER=ollama
-VOLTCLAW_LLM_MODEL=llama3.2
-VOLTCLAW_LLM_URL=http://localhost:11434
-
-# Nostr
-VOLTCLAW_NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol
-VOLTCLAW_NOSTR_PRIVATE_KEY=nsec1...
-
-# Delegation
-VOLTCLAW_DELEGATION_MAX_DEPTH=4
-VOLTCLAW_DELEGATION_MAX_CALLS=25
-VOLTCLAW_DELEGATION_BUDGET_USD=0.75
-
-# Persistence
-VOLTCLAW_PERSISTENCE_TYPE=file
-VOLTCLAW_PERSISTENCE_PATH=~/.voltclaw
-
-# Logging
-VOLTCLAW_LOG_LEVEL=info
-VOLTCLAW_LOG_FORMAT=json
-```
-
-### 3.3 Config File Hierarchy
-
-Load from multiple sources in order of precedence:
-
-```
-1. Environment variables (highest)
-2. CLI arguments
-3. .voltclawrc.json (local)
-4. .voltclaw/config.json (local)
-5. ~/.voltclaw/config.json (user)
-6. /etc/voltclaw/config.json (system)
-7. Built-in defaults (lowest)
-```
-
-```typescript
-const config = await loadConfig({
-  sources: [
-    { type: 'defaults' },
-    { type: 'file', path: '/etc/voltclaw/config.json' },
-    { type: 'file', path: '~/.voltclaw/config.json' },
-    { type: 'file', path: '.voltclaw/config.json' },
-    { type: 'file', path: '.voltclawrc.json' },
-    { type: 'env', prefix: 'VOLTCLAW_' },
-    { type: 'cli' }
-  ]
-});
-```
-
-### 3.4 Fluent Builder API
-
-For programmatic configuration:
-
-```typescript
-const agent = VoltClawAgent.builder()
-  .withLLM(l => l
-    .ollama()
-    .model('llama3.2')
-    .rateLimit(30, 'perMinute')
-  )
-  .withTransport(t => t
-    .nostr()
-    .relays('wss://relay.damus.io', 'wss://nos.lol')
-    .privateKeyFromEnv('NOSTR_PRIVATE_KEY')
-  )
-  .withPersistence(p => p
-    .sqlite()
-    .path('~/.voltclaw/data.db')
-  )
-  .withDelegation(d => d
-    .maxDepth(4)
-    .maxCalls(25)
-    .budget(0.75, 'USD')
-    .timeout(10, 'minutes')
-  )
-  .withHooks(h => h
-    .onMessage(logMessage)
-    .onReply(logReply)
-    .onError(sendAlert)
-  )
-  .build();
-```
-
-### 3.5 Middleware Pipeline
-
-Composable request/response processing:
-
-```typescript
-const agent = new VoltClawAgent()
-  .use(loggingMiddleware())
-  .use(rateLimitMiddleware({ maxPerMinute: 60 }))
-  .use(authMiddleware({ allowedPubkeys }))
-  .use(validationMiddleware())
-  .use(metricsMiddleware());
-
-// Custom middleware
-function loggingMiddleware(): Middleware {
-  return async (ctx, next) => {
-    console.log(`[${new Date().toISOString()}] ${ctx.from}: ${ctx.message}`);
-    await next();
-    console.log(`[${new Date().toISOString()}] Reply: ${ctx.reply?.slice(0, 50)}...`);
-  };
-}
-```
-
-### 3.6 Lifecycle Hooks
-
-React to agent lifecycle events:
-
-```typescript
-agent.hooks.onStart(async () => {
-  console.log('Agent started');
-});
-
-agent.hooks.onStop(async () => {
-  console.log('Agent stopped');
-});
-
-agent.hooks.onDelegationStart(async (ctx) => {
-  console.log(`Delegating: ${ctx.task}`);
-});
-
-agent.hooks.onDelegationComplete(async (ctx) => {
-  console.log(`Delegation complete: ${ctx.result}`);
-});
-
-agent.hooks.onError(async (ctx) => {
-  Sentry.captureException(ctx.error);
-});
-
-agent.hooks.onBudgetExceeded(async (ctx) => {
-  await notifyAdmin(`Budget exceeded: ${ctx.used}/${ctx.limit}`);
-});
-```
-
----
-
-## Phase 4: CLI & Interactive Experience
-
-### 4.1 Command Structure
-
-```bash
-voltclaw [command] [options]
-
-Commands:
-  start                 Start the agent daemon
-  dm <npub> <message>   Send a DM to another agent
-  config [key] [value]  View or edit configuration
-  keys                  Manage identity keys
-  skill                 Manage skills/plugins
-  version               Show version info
-
-Options:
-  --config <path>       Path to config file
-  --log-level <level>   Set log level (debug, info, warn, error)
-  --json                Output in JSON format
-  -h, --help            Show help
-```
-
-### 4.2 Start Command
-
-```bash
-# Basic start
-voltclaw start
-
-# With options
-voltclaw start --llm ollama:llama3.2 --relays wss://relay.damus.io
-
-# Foreground mode (no daemon)
-voltclaw start --foreground
-
-# With custom config
-voltclaw start --config ./voltclaw.production.json
-```
-
-### 4.3 DM Command
-
-```bash
-# Send a DM
-voltclaw dm npub1abc123... "Hello, agent!"
-
-# Interactive mode
-voltclaw dm npub1abc123... --interactive
-
-# Wait for reply
-voltclaw dm npub1abc123... "What is 2+2?" --wait
-```
-
-### 4.4 Config Command
-
-```bash
-# Show all config
-voltclaw config
-
-# Show specific key
-voltclaw config llm.model
-
-# Set a value
-voltclaw config delegation.maxDepth 6
-
-# Export config
-voltclaw config --export > my-config.json
-```
-
-### 4.5 Keys Command
-
-```bash
-# Show current identity
-voltclaw keys
-
-# Generate new identity
-voltclaw keys generate
-
-# Import from nsec
-voltclaw keys import nsec1...
-
-# Export to nsec (with warning)
-voltclaw keys export
-
-# Backup to file
-voltclaw keys backup ./keys-backup.json
-```
-
-### 4.6 Skill Command
-
-```bash
-# List installed skills
-voltclaw skill list
-
-# Install from npm
-voltclaw skill install @voltclaw/skill-http
-
-# Install from local directory
-voltclaw skill install ./my-skill
-
-# Install from git
-voltclaw skill install github:user/voltclaw-skill-custom
-
-# Remove skill
-voltclaw skill remove @voltclaw/skill-http
-
-# Create new skill scaffold
-voltclaw skill create my-skill
-```
-
-### 4.7 Interactive REPL
-
-```bash
-voltclaw repl
-
-> Hello!
-[Agent] Hello! How can I help you today?
-
-> status
-Session Status:
-  Delegations: 0
-  Budget: $0.00 / $0.75
-  Depth: 0
-
-> delegate "Calculate 5!"
-[Agent] Delegating to child instance...
-[Agent] Result: 120
-
-> exit
-Goodbye!
-```
-
----
-
-## Phase 5: Testing Infrastructure
-
-### 5.1 Test Harness
-
-```typescript
-import { TestHarness, MockRelay, MockLLM } from '@voltclaw/testing';
-
-describe('Agent', () => {
-  let harness: TestHarness;
-  
-  beforeEach(async () => {
-    harness = new TestHarness({
-      llm: new MockLLM({
-        responses: {
-          'hello': 'Hello! How can I help?',
-          'status': 'All systems operational.'
-        }
-      }),
-      relay: new MockRelay()
-    });
-    
-    await harness.start();
-  });
-  
-  afterEach(async () => {
-    await harness.stop();
-  });
-  
-  it('responds to greetings', async () => {
-    const reply = await harness.query('hello');
-    expect(reply).toBe('Hello! How can I help?');
-  });
-});
-```
-
-### 5.2 Mock LLM with Fixtures
-
-```typescript
-const mockLLM = new MockLLM({
-  // Static responses
-  responses: {
-    'ping': 'pong'
-  },
-  
-  // Pattern matching
-  patterns: [
-    { match: /what is (\d+)\+(\d+)\?/, respond: (_, a, b) => `${a + b}` }
-  ],
-  
-  // Full handler
-  handler: async (messages) => {
-    const lastMsg = messages[messages.length - 1].content;
-    return { content: `Echo: ${lastMsg}` };
-  },
-  
-  // Simulate delays
-  delay: { min: 50, max: 200 },
-  
-  // Simulate failures
-  failureRate: 0.1
-});
-```
-
-### 5.3 Integration Test Patterns
-
-```typescript
-describe('Delegation', () => {
-  it('delegates complex tasks', async () => {
-    const harness = await TestHarness.create({
-      llm: mockLLM.withToolSupport()
-    });
-    
-    const reply = await harness.query('Factorial of 5');
-    
-    expect(harness.delegationCount).toBeGreaterThan(0);
-    expect(reply).toMatch(/120/);
-  });
-  
-  it('respects max depth', async () => {
-    const harness = await TestHarness.create({
-      delegation: { maxDepth: 2 }
-    });
-    
-    await harness.query('Very complex task');
-    
-    expect(harness.maxDepthReached).toBeLessThanOrEqual(2);
-  });
-  
-  it('handles timeout gracefully', async () => {
-    const harness = await TestHarness.create({
-      delegation: { timeoutMs: 100 },
-      llm: mockLLM.withDelay(200)
-    });
-    
-    const reply = await harness.query('Slow task');
-    
-    expect(reply).toContain('timeout');
-  });
-});
-```
-
----
-
-## Phase 6: Production Readiness
-
-### 6.1 Health Checks
-
-```typescript
-agent.health.addCheck('llm', async () => {
-  await agent.llm.chat([{ role: 'user', content: 'ping' }]);
-  return { status: 'healthy' };
-});
-
-agent.health.addCheck('relays', async () => {
-  const connected = agent.transport.connectedRelays;
-  const total = agent.transport.configuredRelays;
-  return { 
-    status: connected > 0 ? 'healthy' : 'degraded',
-    connected,
-    total 
-  };
-});
-
-// HTTP endpoint
-agent.health.serve(8080); // GET /health
-```
-
-### 6.2 Metrics
-
-```typescript
-// Built-in metrics
-agent.metrics.counter('messages_received');
-agent.metrics.counter('messages_sent');
-agent.metrics.counter('delegations_started');
-agent.metrics.counter('delegations_completed');
-agent.metrics.histogram('llm_latency_ms');
-agent.metrics.histogram('message_processing_ms');
-agent.metrics.gauge('active_sessions');
-agent.metrics.gauge('budget_used_usd');
-
-// Export formats
-agent.metrics.export('prometheus'); // for Prometheus scraping
-agent.metrics.export('json');       // for custom collection
-```
-
-### 6.3 Structured Logging
-
-```typescript
-// Default: Pretty console
-agent.logger.info('Message received', { from: npub, length: msg.length });
-
-// Production: JSON to stdout
-VOLTCLAW_LOG_FORMAT=json voltclaw start
-
-// Custom transport
-agent.logger.addTransport(new FileTransport('/var/log/voltclaw.log'));
-agent.logger.addTransport(new DatadogTransport({ apiKey: '...' }));
-```
-
-### 6.4 Graceful Shutdown
-
-```typescript
-const shutdown = async (signal: string) => {
-  console.log(`Received ${signal}, shutting down gracefully...`);
-  
-  // Stop accepting new messages
-  agent.pause();
-  
-  // Wait for in-flight requests
-  await agent.drain({ timeout: 30000 });
-  
-  // Save state
-  await agent.persist();
-  
-  // Close connections
-  await agent.stop();
-  
-  process.exit(0);
 };
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
 ```
 
-### 6.5 Docker Support
+**Acceptance Criteria:**
+- [ ] Regex patterns work correctly
+- [ ] Case insensitive option works
+- [ ] Returns file, line number, and content
+- [ ] Respects maxMatches limit
+- [ ] Ignores node_modules, dist, .git
 
-```dockerfile
-FROM node:22-alpine
+---
 
-WORKDIR /app
+### 2.2 `glob` Tool
 
-# Install dependencies first (layer caching)
-COPY package*.json ./
-RUN npm ci --only=production
+**Priority:** P1  
+**Effort:** Low  
 
-# Copy built artifacts
-COPY dist/ ./dist/
+Find files by glob pattern.
 
-# Non-root user
-USER node
+```typescript
+// src/tools/glob.ts
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+import { z } from 'zod';
+import { glob as globFn } from 'glob';
+import type { Tool, ToolCallResult } from './types.js';
 
-# Default command
-CMD ["node", "dist/cli.js", "start"]
+const GlobSchema = z.object({
+  pattern: z.string().describe('Glob pattern (e.g., **/*.ts, src/**/*.test.ts)'),
+  path: z.string().optional().default('.').describe('Base directory'),
+  ignore: z.array(z.string()).optional().describe('Patterns to ignore')
+});
 
-# Expose health endpoint
-EXPOSE 8080
-```
+export const globTool: Tool = {
+  name: 'glob',
+  description: 'Find files matching a glob pattern. Use to discover files by name or extension.',
+  parameters: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: 'Glob pattern (e.g., **/*.ts)' },
+      path: { type: 'string', description: 'Base directory (default: current directory)' },
+      ignore: { type: 'array', items: { type: 'string' }, description: 'Patterns to ignore' }
+    },
+    required: ['pattern']
+  },
+  execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+    const parsed = GlobSchema.safeParse(args);
+    if (!parsed.success) {
+      return { error: `Invalid arguments: ${parsed.error.issues[0].message}` };
+    }
 
-### 6.6 Docker Compose for Development
+    const { pattern, path, ignore } = parsed.data;
 
-```yaml
-version: '3.8'
+    try {
+      const files = await globFn(pattern, {
+        cwd: path,
+        nodir: true,
+        ignore: ignore || ['node_modules/**', 'dist/**', '.git/**']
+      });
 
-services:
-  voltclaw:
-    build: .
-    ports:
-      - "8080:8080"
-    volumes:
-      - ~/.voltclaw:/home/node/.voltclaw
-    environment:
-      - VOLTCLAW_LOG_LEVEL=debug
-    depends_on:
-      - ollama
-  
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-  
-  redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
-    profiles:
-      - redis
-
-volumes:
-  ollama-data:
+      return { 
+        files,
+        count: files.length 
+      };
+    } catch (error) {
+      return { error: `Glob error: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+};
 ```
 
 ---
 
-## Phase 7: Extensibility
+### 2.3 `edit` Tool
 
-### 7.1 Plugin System
+**Priority:** P1  
+**Effort:** Medium  
+
+Make targeted file edits by replacing specific text.
 
 ```typescript
-// Plugin interface
-interface VoltClawPlugin {
+// src/tools/edit.ts
+
+import { z } from 'zod';
+import { readFile, writeFile } from 'fs/promises';
+import type { Tool, ToolCallResult } from './types.js';
+
+const EditSchema = z.object({
+  path: z.string().describe('File to edit'),
+  oldString: z.string().describe('Exact text to find and replace'),
+  newString: z.string().describe('Replacement text'),
+  replaceAll: z.boolean().optional().default(false).describe('Replace all occurrences')
+});
+
+export const editTool: Tool = {
+  name: 'edit',
+  description: 'Edit a file by replacing specific text. Use for targeted modifications without rewriting entire file.',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: 'File to edit' },
+      oldString: { type: 'string', description: 'Exact text to find and replace' },
+      newString: { type: 'string', description: 'Replacement text' },
+      replaceAll: { type: 'boolean', description: 'Replace all occurrences (default: false)' }
+    },
+    required: ['path', 'oldString', 'newString']
+  },
+  execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+    const parsed = EditSchema.safeParse(args);
+    if (!parsed.success) {
+      return { error: `Invalid arguments: ${parsed.error.issues[0].message}` };
+    }
+
+    const { path, oldString, newString, replaceAll } = parsed.data;
+
+    try {
+      const content = await readFile(path, 'utf-8');
+
+      // Check if oldString exists
+      if (!content.includes(oldString)) {
+        return { error: `Text not found in file: "${oldString.slice(0, 50)}..."` };
+      }
+
+      // Check for multiple occurrences when not using replaceAll
+      const occurrences = content.split(oldString).length - 1;
+      if (occurrences > 1 && !replaceAll) {
+        return { 
+          error: `Found ${occurrences} occurrences. Use replaceAll: true to replace all, or provide more specific oldString.` 
+        };
+      }
+
+      // Perform replacement
+      const updated = replaceAll
+        ? content.split(oldString).join(newString)
+        : content.replace(oldString, newString);
+
+      await writeFile(path, updated, 'utf-8');
+
+      return { 
+        status: 'success', 
+        path,
+        replacements: replaceAll ? occurrences : 1
+      };
+    } catch (error) {
+      if ((error as any).code === 'ENOENT') {
+        return { error: `File not found: ${path}` };
+      }
+      if ((error as any).code === 'EACCES') {
+        return { error: `Permission denied: ${path}` };
+      }
+      return { error: `Edit failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+};
+```
+
+---
+
+### 2.4 `execute` Tool
+
+**Priority:** P2  
+**Effort:** Medium  
+
+Run shell commands safely with sandboxing.
+
+```typescript
+// src/tools/execute.ts
+
+import { z } from 'zod';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import type { Tool, ToolCallResult } from './types.js';
+
+const execAsync = promisify(exec);
+
+const ExecuteSchema = z.object({
+  command: z.string().describe('Command to execute'),
+  timeout: z.number().optional().default(30000).describe('Timeout in ms (default: 30000)'),
+  cwd: z.string().optional().describe('Working directory')
+});
+
+// Dangerous patterns to block
+const DANGEROUS_PATTERNS = [
+  /rm\s+-rf\s+\//,           // rm -rf /
+  />\s*\/dev\//,              // Writing to device files
+  /mkfs/,                     // Format filesystem
+  /dd\s+if=/,                 // dd commands
+  /:\(\)\{.*:\};\s*:/,        // Fork bombs
+];
+
+export const executeTool: Tool = {
+  name: 'execute',
+  description: 'Execute a shell command. Use for running tests, git commands, npm scripts. Dangerous commands are blocked.',
+  parameters: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', description: 'Command to execute' },
+      timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
+      cwd: { type: 'string', description: 'Working directory' }
+    },
+    required: ['command']
+  },
+  execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+    const parsed = ExecuteSchema.safeParse(args);
+    if (!parsed.success) {
+      return { error: `Invalid arguments: ${parsed.error.issues[0].message}` };
+    }
+
+    const { command, timeout, cwd } = parsed.data;
+
+    // Safety check
+    for (const pattern of DANGEROUS_PATTERNS) {
+      if (pattern.test(command)) {
+        return { error: `Command blocked for safety: matches dangerous pattern` };
+      }
+    }
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        timeout,
+        cwd,
+        maxBuffer: 1024 * 1024 * 10  // 10MB buffer
+      });
+
+      return {
+        status: 'success',
+        stdout: stdout.slice(0, 50000),  // Truncate if too long
+        stderr: stderr.slice(0, 10000),
+        truncated: stdout.length > 50000
+      };
+    } catch (error: any) {
+      if (error.killed) {
+        return { error: `Command timed out after ${timeout}ms` };
+      }
+      return { 
+        error: `Command failed with exit code ${error.code}`,
+        stdout: error.stdout?.slice(0, 10000),
+        stderr: error.stderr?.slice(0, 10000)
+      };
+    }
+  }
+};
+```
+
+---
+
+### 2.5 Tool Registry Update
+
+Update `src/tools/index.ts` to export new tools:
+
+```typescript
+import { grepTool } from './grep.js';
+import { globTool } from './glob.js';
+import { editTool } from './edit.js';
+import { executeTool } from './execute.js';
+
+export function createBuiltinTools(): Tool[] {
+  return [
+    // Existing
+    timeTool,
+    dateTool,
+    sleepTool,
+    estimateTokensTool,
+    httpGetTool,
+    httpPostTool,
+    readFileTool,
+    writeFileTool,
+    listFilesTool,
+    restartTool,
+    // New
+    grepTool,
+    globTool,
+    editTool,
+    executeTool
+  ];
+}
+```
+
+---
+
+## Phase 3: User Experience
+
+### 3.1 Parallel Delegation
+
+**Priority:** P1  
+**Effort:** Medium  
+
+Spawn multiple sub-agents concurrently.
+
+```typescript
+// src/tools/delegate-parallel.ts
+
+import { z } from 'zod';
+import type { Tool, ToolCallResult } from './types.js';
+
+const DelegateParallelSchema = z.object({
+  tasks: z.array(z.object({
+    task: z.string(),
+    summary: z.string().optional()
+  })).min(1).max(10).describe('Tasks to delegate in parallel (max 10)')
+});
+
+export function createDelegateParallelTool(
+  executeDelegate: (args: { task: string; summary?: string }) => Promise<ToolCallResult>,
+  session: Session
+): Tool {
+  return {
+    name: 'delegate_parallel',
+    description: 'Delegate multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              task: { type: 'string' },
+              summary: { type: 'string' }
+            },
+            required: ['task']
+          },
+          description: 'List of tasks to delegate in parallel (max 10)'
+        }
+      },
+      required: ['tasks']
+    },
+    execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+      const parsed = DelegateParallelSchema.safeParse(args);
+      if (!parsed.success) {
+        return { error: `Invalid arguments: ${parsed.error.issues[0].message}` };
+      }
+
+      const { tasks } = parsed.data;
+
+      // Check budget for all tasks
+      const totalEstCost = tasks.reduce((sum, t) => 
+        sum + estimateDelegationCost(t.task, t.summary), 0);
+      
+      if (session.estCostUSD + totalEstCost > this.budgetUSD * 0.8) {
+        return { error: `Insufficient budget for ${tasks.length} parallel delegations` };
+      }
+
+      // Execute in parallel
+      const results = await Promise.all(
+        tasks.map(t => executeDelegate({ task: t.task, summary: t.summary }))
+      );
+
+      return {
+        status: 'completed',
+        results: results.map((r, i) => ({
+          task: tasks[i].task.slice(0, 50),
+          ...r
+        }))
+      };
+    }
+  };
+}
+```
+
+---
+
+### 3.2 Better Error Messages
+
+**Priority:** P2  
+**Effort:** Low  
+
+```typescript
+// src/tools/errors.ts
+
+export function formatToolError(tool: string, error: unknown, args?: Record<string, unknown>): string {
+  // File system errors
+  if ((error as any).code === 'ENOENT') {
+    const path = args?.path || args?.file || 'unknown';
+    return `File not found: ${path}`;
+  }
+  if ((error as any).code === 'EACCES') {
+    const path = args?.path || args?.file || 'unknown';
+    return `Permission denied: ${path}`;
+  }
+  if ((error as any).code === 'EISDIR') {
+    return `Expected file but found directory: ${args?.path}`;
+  }
+  if ((error as any).code === 'ENOTDIR') {
+    return `Expected directory but found file: ${args?.path}`;
+  }
+
+  // Network errors
+  if ((error as any).code === 'ECONNREFUSED') {
+    return `Connection refused: ${args?.url || 'unknown host'}`;
+  }
+  if ((error as any).code === 'ETIMEDOUT') {
+    return `Connection timed out: ${args?.url || 'unknown host'}`;
+  }
+  if ((error as any).code === 'ENOTFOUND') {
+    return `Host not found: ${args?.url}`;
+  }
+
+  // HTTP errors
+  if ((error as any).status) {
+    const status = (error as any).status;
+    const statusMessages: Record<number, string> = {
+      400: 'Bad request',
+      401: 'Unauthorized - check API key',
+      403: 'Forbidden - insufficient permissions',
+      404: 'Not found',
+      429: 'Rate limited - try again later',
+      500: 'Server error',
+      502: 'Bad gateway',
+      503: 'Service unavailable'
+    };
+    return `HTTP ${status}: ${statusMessages[status] || 'Unknown error'}`;
+  }
+
+  // Generic error
+  const message = error instanceof Error ? error.message : String(error);
+  return `${tool} failed: ${message}`;
+}
+```
+
+---
+
+### 3.3 `--verbose` and `--debug` Flags
+
+**Priority:** P2  
+**Effort:** Low  
+
+```typescript
+// src/cli/index.ts
+
+interface CLIOptions {
+  recursive: boolean;
+  verbose: boolean;
+  debug: boolean;
+  dryRun: boolean;
+  json: boolean;
+  quiet: boolean;
+}
+
+function parseFlags(args: string[]): { options: CLIOptions; positional: string[] } {
+  const options: CLIOptions = {
+    recursive: false,
+    verbose: false,
+    debug: false,
+    dryRun: false,
+    json: false,
+    quiet: false
+  };
+  const positional: string[] = [];
+
+  for (const arg of args) {
+    if (arg === '--recursive' || arg === '-r') options.recursive = true;
+    else if (arg === '--verbose' || arg === '-v') options.verbose = true;
+    else if (arg === '--debug' || arg === '-d') options.debug = true;
+    else if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--json') options.json = true;
+    else if (arg === '--quiet' || arg === '-q') options.quiet = true;
+    else if (!arg.startsWith('-')) positional.push(arg);
+  }
+
+  return { options, positional };
+}
+```
+
+---
+
+## Phase 4: Production Ready
+
+### 4.1 Health Check Command
+
+```bash
+voltclaw health [--json]
+```
+
+```typescript
+// src/cli/commands/health.ts
+
+async function healthCommand(json: boolean): Promise<void> {
+  const config = await loadConfig();
+  const checks: HealthCheck[] = [];
+
+  // LLM check
+  const llmCheck = await checkLLM(config.llm);
+  checks.push(llmCheck);
+
+  // Transport check
+  const transportCheck = await checkTransport(config.relays);
+  checks.push(transportCheck);
+
+  // Storage check
+  const storageCheck = await checkStorage();
+  checks.push(storageCheck);
+
+  if (json) {
+    console.log(JSON.stringify({ checks, healthy: checks.every(c => c.healthy) }, null, 2));
+    return;
+  }
+
+  for (const check of checks) {
+    const icon = check.healthy ? '✓' : '✗';
+    console.log(`${icon} ${check.name}: ${check.message}`);
+  }
+
+  const allHealthy = checks.every(c => c.healthy);
+  console.log(allHealthy ? '\nSystem healthy' : '\nSystem has issues');
+  process.exit(allHealthy ? 0 : 1);
+}
+
+async function checkLLM(config: LLMConfig): Promise<HealthCheck> {
+  try {
+    const llm = createLLMProvider(config);
+    const start = Date.now();
+    await llm.chat([{ role: 'user', content: 'ping' }], { maxTokens: 5 });
+    const latency = Date.now() - start;
+    
+    return {
+      name: 'LLM',
+      healthy: true,
+      message: `${config.provider}/${config.model} (connected, ${latency}ms latency)`
+    };
+  } catch (error) {
+    return {
+      name: 'LLM',
+      healthy: false,
+      message: `${config.provider}/${config.model} - ${error instanceof Error ? error.message : 'unreachable'}`
+    };
+  }
+}
+```
+
+---
+
+### 4.2 Session Management
+
+```bash
+voltclaw session list
+voltclaw session show <id>
+voltclaw session clear
+voltclaw session export <id>
+```
+
+---
+
+### 4.3 Streaming Output
+
+```typescript
+// src/llm/types.ts
+
+export interface LLMProvider {
+  // ... existing
+  stream?(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk>;
+}
+
+export interface ChatChunk {
+  content?: string;
+  toolCalls?: Partial<ToolCall>;
+  done?: boolean;
+}
+
+// src/llm/ollama.ts
+
+async *stream(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk> {
+  const response = await fetch(`${this.baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: this.model,
+      messages: messages.map(m => this.formatMessage(m)),
+      stream: true,
+      tools: options?.tools
+    })
+  });
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const data = JSON.parse(line);
+      if (data.message?.content) {
+        yield { content: data.message.content };
+      }
+    }
+  }
+
+  yield { done: true };
+}
+```
+
+---
+
+## Phase 5: Ecosystem
+
+### 5.1 Plugin System
+
+```typescript
+// src/core/plugin.ts
+
+export interface VoltClawPlugin {
   name: string;
   version: string;
+  description?: string;
   
-  // Lifecycle hooks
+  // Lifecycle
   init?(agent: VoltClawAgent): Promise<void>;
   start?(agent: VoltClawAgent): Promise<void>;
   stop?(agent: VoltClawAgent): Promise<void>;
   
-  // Contribute tools
+  // Contributions
   tools?: Tool[];
-  
-  // Contribute middleware
   middleware?: Middleware[];
-  
-  // Contribute LLM providers
-  llmProviders?: Record<string, LLMProviderFactory>;
-  
-  // Contribute transports
-  transports?: Record<string, TransportFactory>;
+  providers?: Record<string, LLMProviderFactory>;
 }
 
-// Example plugin
-const httpSkillPlugin: VoltClawPlugin = {
-  name: '@voltclaw/skill-http',
-  version: '1.0.0',
+export class PluginManager {
+  private plugins: Map<string, VoltClawPlugin> = new Map();
   
-  tools: [
-    {
-      name: 'http_get',
-      description: 'Make HTTP GET request',
-      parameters: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'URL to fetch' }
-        },
-        required: ['url']
-      },
-      execute: async (params) => {
-        const res = await fetch(params.url);
-        return { ok: true, value: await res.text() };
-      }
+  async load(pluginName: string): Promise<void> {
+    const plugin = await import(pluginName);
+    this.plugins.set(pluginName, plugin.default || plugin);
+  }
+  
+  getTools(): Tool[] {
+    return Array.from(this.plugins.values())
+      .flatMap(p => p.tools || []);
+  }
+  
+  getMiddleware(): Middleware[] {
+    return Array.from(this.plugins.values())
+      .flatMap(p => p.middleware || []);
+  }
+}
+```
+
+---
+
+### 5.2 Interactive Tool Approval
+
+```typescript
+// For destructive operations with --interactive flag
+
+const DESTRUCTIVE_TOOLS = ['execute', 'write_file', 'edit', 'delete'];
+
+async function executeToolWithApproval(
+  name: string,
+  args: Record<string, unknown>,
+  interactive: boolean
+): Promise<ToolCallResult> {
+  if (interactive && DESTRUCTIVE_TOOLS.includes(name)) {
+    const approved = await promptApproval(name, args);
+    if (!approved) {
+      return { error: 'Tool execution cancelled by user' };
     }
-  ]
-};
-
-// Register plugin
-agent.use(httpSkillPlugin);
-```
-
-### 7.2 Custom LLM Provider
-
-```typescript
-class CustomLLMProvider implements LLMProvider {
-  name = 'custom';
-  model: string;
-  
-  constructor(private config: { apiKey: string; model: string }) {
-    this.model = config.model;
   }
-  
-  async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    // Implementation
-  }
+  return executeTool(name, args);
 }
 
-// Register globally
-VoltClawAgent.registerLLMProvider('custom', (config) => new CustomLLMProvider(config));
-
-// Use
-const agent = new VoltClawAgent({
-  llm: { provider: 'custom', model: 'my-model', apiKey: '...' }
-});
-```
-
-### 7.3 Custom Transport
-
-```typescript
-class DiscordTransport implements Transport {
-  type = 'discord';
-  identity = { publicKey: 'discord-user-id' };
-  
-  constructor(private client: DiscordClient) {}
-  
-  async send(to: string, content: string): Promise<void> {
-    await this.client.users.send(to, content);
-  }
-  
-  subscribe(handler: MessageHandler): Unsubscribe {
-    this.client.on('message', (msg) => {
-      handler(msg.author.id, msg.content, {});
+async function promptApproval(name: string, args: Record<string, unknown>): Promise<boolean> {
+  return new Promise((resolve) => {
+    console.log(`\nTool call: ${name}(${JSON.stringify(args).slice(0, 100)})`);
+    process.stdout.write('Allow? [y/N/a=always/s=skip]: ');
+    
+    process.stdin.once('data', (data) => {
+      const answer = data.toString().trim().toLowerCase();
+      resolve(answer === 'y' || answer === 'yes' || answer === 'a');
     });
-    return () => this.client.off('message');
-  }
+  });
 }
-
-// Use
-const agent = new VoltClawAgent({
-  transport: new DiscordTransport(discordClient)
-});
 ```
 
 ---
 
-## Phase 8: Documentation
+## Architecture Reference
 
-### 8.1 README Structure
-
-```markdown
-# VoltClaw ⚡
-
-Recursive autonomous agent platform for TypeScript.
-
-## Quick Start
-
-\`\`\`bash
-npx voltclaw start
-\`\`\`
-
-## Features
-
-- **Recursive Delegation** - Agents call themselves for complex tasks
-- **Nostr Native** - Decentralized, encrypted communication
-- **LLM Agnostic** - Ollama, OpenAI, Anthropic, or custom
-- **Zero Config** - Works out of the box
-- **Plugin Ready** - Extend with tools, transports, providers
-
-## Installation
-
-\`\`\`bash
-npm install voltclaw
-\`\`\`
-
-## Usage
-
-### CLI
-
-\`\`\`bash
-voltclaw start
-voltclaw dm npub1... "Hello!"
-\`\`\`
-
-### Programmatic
-
-\`\`\`typescript
-import { VoltClawAgent } from 'voltclaw';
-
-const agent = new VoltClawAgent();
-await agent.start();
-
-const reply = await agent.query('What is 2+2?');
-console.log(reply); // "4"
-
-await agent.stop();
-\`\`\`
-
-## Documentation
-
-- [Getting Started](./docs/getting-started.md)
-- [Configuration](./docs/configuration.md)
-- [API Reference](./docs/api-reference.md)
-- [Creating Plugins](./docs/plugins.md)
-
-## License
-
-MIT
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VoltClawAgent                            │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐     │
+│  │ LLMProvider │  │   Transport  │  │       Store        │     │
+│  │ ├─ Ollama   │  │ ├─ Nostr     │  │ ├─ FileStore       │     │
+│  │ ├─ OpenAI   │  │ ├─ WebSocket │  │ ├─ MemoryStore     │     │
+│  │ └─ Anthropic│  │ └─ Memory    │  │ └─ SQLiteStore     │     │
+│  └─────────────┘  └──────────────┘  └────────────────────┘     │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    Tool Registry                         │   │
+│  │  ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌────────────┐  │   │
+│  │  │ files   │ │ delegate │ │  grep   │ │  execute    │  │   │
+│  │  │ - read  │ │ - sub    │ │  glob   │ │  (sandboxed)│  │   │
+│  │  │ - write │ │ - parallel│ │  edit   │ └────────────┘  │   │
+│  │  │ - list  │ └──────────┘ └─────────┘                  │   │
+│  │  └─────────┘                                            │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                   Session Manager                        │   │
+│  │  history: ChatMessage[]                                  │   │
+│  │  subTasks: Map<subId, { task, result, resolve, reject }> │   │
+│  │  depth: number  │  cost: number  │  timeout: number     │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    Event System                          │   │
+│  │  on('tool_call') │ on('tool_result') │ on('delegation') │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.2 API Documentation
+---
 
-Auto-generated with TypeDoc:
+## Testing Strategy
+
+### Unit Tests
+
+| Component | Test File | Coverage Target |
+|-----------|-----------|-----------------|
+| VoltClawAgent | `test/unit/agent.test.ts` | 90% |
+| Tools | `test/unit/tools.test.ts` | 95% |
+| LLM Providers | `test/unit/llm.test.ts` | 85% |
+| Nostr Client | `test/unit/nostr.test.ts` | 80% |
+| CLI Parser | `test/unit/cli.test.ts` | 90% |
+
+### Integration Tests
+
+| Scenario | Test File | Key Assertions |
+|----------|-----------|----------------|
+| Basic query | `test/integration/basic-reply.test.ts` | Response received |
+| Tool execution | `test/integration/tools.test.ts` | Tools execute correctly |
+| Recursive delegation | `test/integration/delegation.test.ts` | Results flow back |
+| Error recovery | `test/integration/errors.test.ts` | Graceful handling |
+| Session persistence | `test/integration/persistence.test.ts` | State survives restart |
+
+### Test Utilities
 
 ```typescript
-/**
- * Creates and manages a recursive autonomous agent.
- * 
- * @example
- * ```typescript
- * const agent = new VoltClawAgent();
- * await agent.start();
- * ```
- */
-export class VoltClawAgent {
-  /**
-   * Process a message and return the agent's response.
-   * 
-   * @param message - The message to process
-   * @param options - Optional processing options
-   * @returns The agent's response
-   * 
-   * @example
-   * ```typescript
-   * const reply = await agent.query('Hello!');
-   * ```
-   */
-  async query(message: string, options?: QueryOptions): Promise<string>;
-}
+// Example: Delegation test
+describe('Delegation', () => {
+  it('returns sub-agent result to calling context', async () => {
+    const harness = await TestHarness.create({
+      llm: new MockLLM({
+        patterns: [
+          { match: /delegate/, respond: () => 'use delegate' },
+          { match: /summarize/, respond: () => 'Summary: core module handles agent logic' }
+        ]
+      })
+    });
+
+    const result = await harness.query('Analyze the core module');
+    
+    expect(result).toContain('core module');
+    expect(harness.delegationCount).toBeGreaterThan(0);
+  });
+});
 ```
-
-### 8.3 Migration Guide
-
-For users upgrading from single-file version:
-
-```markdown
-# Migration from v0.x to v1.0
-
-## Breaking Changes
-
-### Import Path Changed
-
-**Before:**
-\`\`\`typescript
-// Single file import
-import './voltclaw.ts';
-\`\`\`
-
-**After:**
-\`\`\`typescript
-import { VoltClawAgent } from 'voltclaw';
-
-const agent = new VoltClawAgent();
-await agent.start();
-\`\`\`
-
-### Config File Location
-
-**Before:** `~/.clawvolt/config.json`
-**After:** `~/.voltclaw/config.json`
-
-Run migration:
-\`\`\`bash
-voltclaw migrate
-\`\`\`
-
-### Environment Variables
-
-**Before:** `RELAYS`, `LLM_URL`
-**After:** `VOLTCLAW_NOSTR_RELAYS`, `VOLTCLAW_LLM_URL`
-```
-
----
-
-## Implementation Roadmap
-
-### Week 1-2: Foundation
-- [ ] Monorepo setup (pnpm workspaces)
-- [ ] TypeScript strict configuration
-- [ ] Core `VoltClawAgent` class
-- [ ] Transport abstraction
-- [ ] LLM provider abstraction
-- [ ] Basic test harness
-
-### Week 3-4: Reliability
-- [ ] Circuit breaker
-- [ ] Retry with backoff
-- [ ] Graceful degradation
-- [ ] Session recovery
-- [ ] Error hierarchy
-
-### Week 5-6: Ergonomics
-- [ ] Zero-config bootstrap
-- [ ] Config loading hierarchy
-- [ ] Fluent builder API
-- [ ] Middleware pipeline
-- [ ] Lifecycle hooks
-
-### Week 7-8: CLI & Testing
-- [ ] CLI commands (start, dm, config, keys, skill)
-- [ ] Interactive REPL
-- [ ] Mock LLM with fixtures
-- [ ] Mock relay
-- [ ] Integration test suite
-
-### Week 9-10: Production
-- [ ] Health checks
-- [ ] Metrics collection
-- [ ] Structured logging
-- [ ] Graceful shutdown
-- [ ] Docker & docker-compose
-
-### Week 11-12: Extensibility & Docs
-- [ ] Plugin system
-- [ ] Custom provider/transport guides
-- [ ] API documentation (TypeDoc)
-- [ ] Examples (10+ scenarios)
-- [ ] Migration guide
-- [ ] README polish
 
 ---
 
 ## Success Metrics
 
-| Metric | Target |
-|--------|--------|
-| TypeScript strict mode | 0 errors |
-| ESLint | 0 warnings |
-| Test coverage | >90% |
-| Bundle size (core) | <50KB gzipped |
-| Startup time | <1 second |
-| Time to first response | <100ms (mock LLM) |
-| Memory footprint | <100MB idle |
-| npm weekly downloads | >1000 (6 months) |
-| GitHub stars | >500 (6 months) |
-| Contributor count | >10 (6 months) |
+| Metric | Current | Target | Measure |
+|--------|---------|--------|---------|
+| Delegation end-to-end | ❌ | ✅ | Integration test passes |
+| Tool execution rate | 90% | 99% | Successful tool calls / total |
+| Error message helpfulness | 30% | 95% | User survey / error clarity score |
+| Time to first response | <5s | <2s | Benchmark with mock LLM |
+| Test coverage | 70% | 90% | `vitest --coverage` |
+| TypeScript strict | ✅ | ✅ | `tsc --noEmit` |
+| ESLint | ✅ | ✅ | `eslint .` |
+| Recursive depth | 4 | 4+ | Max delegation depth |
+| Parallel delegations | 0 | 10 | Max concurrent sub-agents |
 
 ---
 
-## File Decomposition Map
+## Contributing
 
-Current `voltclaw.ts` (556 lines) → Target modules:
+### Before Starting
 
-| Lines | Content | Target Module |
-|-------|---------|---------------|
-| 14-74 | Config types/loader | `packages/voltclaw/src/config/` |
-| 77-93 | Key management | `packages/voltclaw/src/identity.ts` |
-| 96-139 | Memory/Session | `packages/@voltclaw/memory/src/` |
-| 143-158 | Tool registry | `packages/@voltclaw/tools/src/registry.ts` |
-| 160-161 | Built-in tools | `packages/@voltclaw/tools/src/*.ts` |
-| 164-195 | Delegate tool | `packages/@voltclaw/tools/src/delegate.ts` |
-| 198-248 | LLM call | `packages/@voltclaw/llm/src/` |
-| 251-305 | Nostr client | `packages/@voltclaw/nostr/src/` |
-| 309-351 | Helpers | `packages/voltclaw/src/agent/` |
-| 354-480 | Message processing | `packages/voltclaw/src/agent/processor.ts` |
-| 483-504 | Trace/skills | `packages/voltclaw/src/trace.ts` |
-| 507-529 | Recovery | `packages/voltclaw/src/agent/recovery.ts` |
-| 532-555 | Main/CLI | `packages/@voltclaw/cli/src/` |
+1. Read this PLAN.md thoroughly
+2. Check existing tests for patterns
+3. Review similar implementations
 
-Current `test-integration.ts` (440 lines):
+### When Adding Features
 
-| Lines | Content | Target Module |
-|-------|---------|---------------|
-| 20-149 | TestRelay | `packages/@voltclaw/testing/src/mock-relay.ts` |
-| 151-247 | TestClient | `packages/@voltclaw/testing/src/mock-client.ts` |
-| 252-331 | Setup/teardown | `packages/@voltclaw/testing/src/harness.ts` |
-| 333-437 | Test cases | `test/integration/*.test.ts` |
+1. Write tests first (TDD)
+2. Update PLAN.md with completion status
+3. Add JSDoc comments to public APIs
+4. Update README.md if user-facing
+5. Run `pnpm lint && pnpm typecheck && pnpm test`
+
+### Commit Convention
+
+```
+feat: add grep tool for file content search
+fix: delegation results now return to caller
+docs: update README with parallel delegation
+test: add integration test for delegation flow
+refactor: extract error formatting to separate module
+```

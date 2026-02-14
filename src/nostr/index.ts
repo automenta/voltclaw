@@ -1,4 +1,4 @@
-export { NostrClient, generateNewKeyPair, type NostrClientOptions } from './client.js';
+export { NostrClient, generateNewKeyPair, resolveToHex, type NostrClientOptions } from './client.js';
 export type {
   Transport,
   MessageHandler,
