@@ -14,8 +14,12 @@
       "types": "./dist/index.d.ts"
     },
     "./nostr": {
-      "import": "./dist/nostr/index.js",
-      "types": "./dist/nostr/index.d.ts"
+      "import": "./dist/channels/nostr/index.js",
+      "types": "./dist/channels/nostr/index.d.ts"
+    },
+    "./channels/nostr": {
+      "import": "./dist/channels/nostr/index.js",
+      "types": "./dist/channels/nostr/index.d.ts"
     },
     "./llm": {
       "import": "./dist/llm/index.js",
@@ -60,6 +64,7 @@
   "license": "MIT",
   "dependencies": {
     "glob": "^13.0.3",
+    "inquirer": "^13.2.2",
     "nostr-relaypool": "^0.6.30",
     "nostr-tools": "^2.23.1",
     "ws": "^8.19.0",

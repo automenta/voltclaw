@@ -4,7 +4,6 @@ import { homedir } from 'os';
 
 export const VOLTCLAW_DIR = join(homedir(), '.voltclaw');
 export const SYSTEM_PROMPT_PATH = join(VOLTCLAW_DIR, 'SYSTEM_PROMPT.md');
-export const AGENTS_PATH = join(VOLTCLAW_DIR, 'AGENTS.md');
 export const TOOLS_DIR = join(VOLTCLAW_DIR, 'tools');
 
 export const DEFAULT_SYSTEM_PROMPT = `You are VoltClaw.
@@ -37,27 +36,12 @@ CONSTRAINTS:
 
 You are persistent, efficient, and recursive.`;
 
-export const DEFAULT_AGENTS_MD = `# VoltClaw Agents
-
-This file contains meta-instructions for the agent.
-It is read by the agent on startup.
-
-## Guidelines
-1. Be concise.
-2. Prefer recursion over long context windows.
-3. Write modular code.
-`;
-
 export async function bootstrap(): Promise<void> {
   await mkdir(VOLTCLAW_DIR, { recursive: true });
   await mkdir(TOOLS_DIR, { recursive: true });
 
   if (!(await exists(SYSTEM_PROMPT_PATH))) {
     await writeFile(SYSTEM_PROMPT_PATH, DEFAULT_SYSTEM_PROMPT, 'utf-8');
-  }
-
-  if (!(await exists(AGENTS_PATH))) {
-    await writeFile(AGENTS_PATH, DEFAULT_AGENTS_MD, 'utf-8');
   }
 }
 

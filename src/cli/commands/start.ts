@@ -1,12 +1,13 @@
 import { VoltClawAgent, type LLMProvider, type MessageContext, type ReplyContext, type ErrorContext } from '../../core/index.js';
-import { NostrClient } from '../../nostr/index.js';
+import { NostrClient } from '../../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
 import { FileStore } from '../../memory/index.js';
 import { createAllTools } from '../../tools/index.js';
-import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR } from '../config.js';
+import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR, CONFIG_FILE } from '../config.js';
 import path from 'path';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
+import fs from 'fs/promises';
 
 // --- Helpers ---
 // Ideally these would be shared but for now we duplicate or refactor CLI logic later.
@@ -35,6 +36,14 @@ function createLLMProvider(config: any): LLMProvider {
 }
 
 export async function startCommand(interactive: boolean = false): Promise<void> {
+  // Check if config exists
+  try {
+    await fs.stat(CONFIG_FILE);
+  } catch {
+    console.warn('\n⚠️  Configuration file not found. Running with defaults.');
+    console.warn('   Run `voltclaw configure` to set up your environment.\n');
+  }
+
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
 
@@ -42,7 +51,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
 
   const llm = createLLMProvider(config.llm);
-  const transport = new NostrClient({
+  const channel = new NostrClient({
     relays: config.relays,
     privateKey: keys.secretKey
   });
@@ -51,7 +60,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
 
   const agent = new VoltClawAgent({
     llm,
-    transport,
+    channel,
     persistence: store,
     call: config.call,
     tools,

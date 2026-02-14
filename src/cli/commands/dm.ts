@@ -1,4 +1,4 @@
-import { NostrClient, resolveToHex } from '../../nostr/index.js';
+import { NostrClient, resolveToHex } from '../../channels/nostr/index.js';
 import { loadConfig, loadOrGenerateKeys } from '../config.js';
 
 export async function dmCommand(to: string, message: string): Promise<void> {

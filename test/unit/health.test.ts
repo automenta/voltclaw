@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { healthCommand } from '../../src/cli/commands/health.js';
 import { FileStore } from '../../src/memory/index.js';
-import { NostrClient } from '../../src/nostr/index.js';
+import { NostrClient } from '../../src/channels/nostr/index.js';
 import * as configModule from '../../src/cli/config.js';
 
 // Mock dependencies
@@ -20,7 +20,7 @@ vi.mock('../../src/llm/index.js', () => {
   };
 });
 
-vi.mock('../../src/nostr/index.js', () => {
+vi.mock('../../src/channels/nostr/index.js', () => {
   const NostrClient = vi.fn();
   NostrClient.prototype.start = vi.fn().mockResolvedValue(undefined);
   NostrClient.prototype.stop = vi.fn().mockResolvedValue(undefined);
@@ -70,7 +70,7 @@ describe('Health Command', () => {
     await healthCommand(false);
 
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('LLM'));
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Transport'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Channel'));
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Storage'));
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('All systems healthy'));
     expect(exitSpy).toHaveBeenCalledWith(0);

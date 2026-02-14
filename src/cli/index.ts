@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { VoltClawAgent, type LLMProvider } from '../core/index.js';
-import { NostrClient } from '../nostr/index.js';
+import { NostrClient } from '../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { FileStore } from '../memory/index.js';
 import { createAllTools } from '../tools/index.js';
@@ -10,6 +10,7 @@ import { startCommand } from './commands/start.js';
 import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
+import { configureCommand } from './commands/configure.js';
 import path from 'path';
 import readline from 'readline';
 
@@ -46,6 +47,7 @@ Usage:
 Commands:
   start               Start the agent daemon
   repl                Start interactive REPL (alias for start with interaction)
+  configure           Run interactive configuration wizard
   config [key] [val]  View or edit configuration
   keys                Show current identity
   dm <npub> <msg>     Send a direct message
@@ -69,7 +71,7 @@ async function oneShotQuery(
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
   const llm = createLLMProvider(config.llm);
-  const transport = new NostrClient({
+  const channel = new NostrClient({
     relays: config.relays,
     privateKey: keys.secretKey
   });
@@ -78,7 +80,7 @@ async function oneShotQuery(
 
   const agent = new VoltClawAgent({
     llm,
-    transport,
+    channel,
     persistence: store,
     call: options.recursive ? config.call : { ...config.call, maxDepth: 1 },
     tools,
@@ -193,6 +195,10 @@ async function run(args: string[]): Promise<void> {
       const keys = await loadOrGenerateKeys();
       console.log('Current identity:');
       console.log(`  Public key: ${keys.publicKey}`);
+      break;
+    }
+    case 'configure': {
+      await configureCommand();
       break;
     }
     case 'config': {
