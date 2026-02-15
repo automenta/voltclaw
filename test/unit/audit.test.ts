@@ -90,4 +90,32 @@ describe('FileAuditLog', () => {
     const isValid = await logger.verify();
     expect(isValid).toBe(false);
   });
+
+  it('should handle undefined values in hashing', async () => {
+    const logger = new FileAuditLog(auditPath);
+    await logger.log('user', 'action', { a: 1, b: undefined }); // b should be ignored
+
+    // If verify passes, it means hash calculation in memory matched hash calculation from JSON (where b is missing)
+    const isValid = await logger.verify();
+    expect(isValid).toBe(true);
+  });
+
+  it('should handle concurrent writes correctly', async () => {
+    const logger = new FileAuditLog(auditPath);
+
+    // Start multiple logs concurrently
+    await Promise.all([
+        logger.log('user', 'action1', {}),
+        logger.log('user', 'action2', {}),
+        logger.log('user', 'action3', {})
+    ]);
+
+    const content = await fs.readFile(auditPath, 'utf-8');
+    const lines = content.trim().split('\n');
+    expect(lines).toHaveLength(3);
+
+    // Verify chain integrity
+    const isValid = await logger.verify();
+    expect(isValid).toBe(true);
+  });
 });

@@ -60,6 +60,32 @@ export function createMemoryTools(manager: MemoryManager): Tool[] {
         await manager.forget(args.id as string);
         return { status: 'removed', id: args.id };
       }
+    },
+    {
+      name: 'memory_export',
+      description: 'Export all memories for backup or transfer.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      },
+      execute: async () => {
+        const memories = await manager.export();
+        return { status: 'exported', count: memories.length, memories };
+      }
+    },
+    {
+      name: 'memory_consolidate',
+      description: 'Trigger memory optimization and cleanup.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      },
+      execute: async () => {
+        await manager.consolidate();
+        return { status: 'consolidated' };
+      }
     }
   ];
 }

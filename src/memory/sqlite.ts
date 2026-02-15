@@ -165,4 +165,31 @@ export class SQLiteStore implements Store {
     if (!this.db) await this.load();
     await this.db!.run('DELETE FROM memories WHERE id = ?', id);
   }
+
+  async exportMemories(): Promise<MemoryEntry[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM memories ORDER BY timestamp ASC');
+    return rows.map(row => ({
+      id: row.id,
+      type: row.type as MemoryEntry['type'],
+      content: row.content,
+      tags: JSON.parse(row.tags || '[]'),
+      importance: row.importance,
+      timestamp: row.timestamp,
+      contextId: row.context_id,
+      metadata: JSON.parse(row.metadata || '{}')
+    }));
+  }
+
+  async consolidateMemories(): Promise<void> {
+    if (!this.db) await this.load();
+    // Basic consolidation: Prune low importance memories if count > 1000
+    // Keep top 1000 by importance + recency
+    const countResult = await this.db!.get('SELECT COUNT(*) as count FROM memories');
+    if (countResult.count > 1000) {
+        // Delete items with importance <= 1, keeping only newest if still needed
+        // For simplicity: delete oldest memories with importance < 3
+        await this.db!.run('DELETE FROM memories WHERE importance < 3 AND id NOT IN (SELECT id FROM memories ORDER BY timestamp DESC LIMIT 500)');
+    }
+  }
 }

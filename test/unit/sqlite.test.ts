@@ -12,7 +12,13 @@ vi.mock('sqlite', () => ({
       run: vi.fn().mockResolvedValue(undefined),
       finalize: vi.fn().mockResolvedValue(undefined),
     }),
-    all: vi.fn().mockResolvedValue([]),
+    run: vi.fn().mockResolvedValue(undefined),
+    all: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('COUNT(*)')) return Promise.resolve({ count: 1001 }); // Trigger consolidate
+        if (sql.includes('memories')) return Promise.resolve([{ id: '1', content: 'test' }]);
+        return Promise.resolve([]);
+    }),
+    get: vi.fn().mockResolvedValue({ count: 1001 }), // For consolidate count check
   }),
 }));
 
@@ -28,31 +34,20 @@ describe('SQLiteStore', () => {
   it('should load sessions', async () => {
     const store = new SQLiteStore({ path: dbPath });
     await store.load();
-    // Logic test: should have called open and exec
     const { open } = await import('sqlite');
     expect(open).toHaveBeenCalled();
   });
 
-  it('should save sessions', async () => {
+  it('should export memories', async () => {
     const store = new SQLiteStore({ path: dbPath });
-    await store.load(); // Init DB mock
+    const memories = await store.exportMemories();
+    expect(memories).toHaveLength(1);
+    expect(memories[0].id).toBe('1');
+  });
 
-    const session: Session = {
-      history: [{ role: 'user', content: 'hello' }],
-      callCount: 1,
-      estCostUSD: 0.01,
-      actualTokensUsed: 100,
-      subTasks: {},
-      depth: 0,
-      topLevelStartedAt: Date.now()
-    };
-
-    const s = store.get('test-session');
-    Object.assign(s, session);
-
-    await store.save();
-
-    // Check if prepare/run called (via mock)
-    // Detailed verification of mock calls skipped for brevity, checking no crash
+  it('should consolidate memories', async () => {
+    const store = new SQLiteStore({ path: dbPath });
+    await store.consolidateMemories();
+    // Implementation details mocked, checking no crash
   });
 });

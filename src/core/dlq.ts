@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { AsyncMutex } from './utils.js';
 
 export interface FailedOperation {
   id: string;
@@ -45,6 +46,7 @@ export class InMemoryDLQ implements DLQStore {
 export class FileDLQ implements DLQStore {
   private queue: Map<string, FailedOperation> = new Map();
   private readonly path: string;
+  private readonly mutex = new AsyncMutex();
 
   constructor(pathStr: string) {
     this.path = pathStr;
@@ -75,30 +77,42 @@ export class FileDLQ implements DLQStore {
   }
 
   async save(op: FailedOperation): Promise<void> {
-    await this.load();
-    this.queue.set(op.id, op);
-    await this.persist();
+    await this.mutex.run(async () => {
+      await this.load();
+      this.queue.set(op.id, op);
+      await this.persist();
+    });
   }
 
   async list(): Promise<FailedOperation[]> {
-    await this.load();
-    return Array.from(this.queue.values());
+    // List doesn't modify, but should ideally wait for pending writes
+    // or just read fresh
+    return this.mutex.run(async () => {
+      await this.load();
+      return Array.from(this.queue.values());
+    });
   }
 
   async remove(id: string): Promise<void> {
-    await this.load();
-    this.queue.delete(id);
-    await this.persist();
+    await this.mutex.run(async () => {
+      await this.load();
+      this.queue.delete(id);
+      await this.persist();
+    });
   }
 
   async clear(): Promise<void> {
-    this.queue.clear();
-    await this.persist();
+    await this.mutex.run(async () => {
+      this.queue.clear();
+      await this.persist();
+    });
   }
 
   async get(id: string): Promise<FailedOperation | undefined> {
-    await this.load();
-    return this.queue.get(id);
+    return this.mutex.run(async () => {
+      await this.load();
+      return this.queue.get(id);
+    });
   }
 }
 

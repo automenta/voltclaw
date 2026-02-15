@@ -29,6 +29,10 @@ export interface CLIConfig {
   audit?: {
     path?: string;
   };
+  persistence?: {
+    type: 'sqlite' | 'file';
+    path?: string;
+  };
   plugins?: string[];
 }
 
@@ -55,6 +59,10 @@ const defaultConfig: CLIConfig = {
   },
   audit: {
     path: path.join(VOLTCLAW_DIR, 'audit.jsonl')
+  },
+  persistence: {
+    type: 'sqlite',
+    path: path.join(VOLTCLAW_DIR, 'voltclaw.db')
   },
   plugins: []
 };

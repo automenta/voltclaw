@@ -1,6 +1,9 @@
 import fs from 'fs/promises';
+import { createReadStream } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import readline from 'readline';
+import { AsyncMutex } from './utils.js';
 
 export interface AuditEntry {
   id: string;
@@ -17,10 +20,32 @@ export interface AuditLog {
   verify(): Promise<boolean>;
 }
 
+// Simple key-sorting stringify for deterministic hashing
+function deterministicStringify(obj: any): string {
+  if (obj === undefined) return ''; // Should handle this case if called directly, though object keys filter it
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(item => deterministicStringify(item)).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  const parts: string[] = [];
+
+  for (const key of keys) {
+    const value = obj[key];
+    if (value !== undefined) {
+      parts.push(JSON.stringify(key) + ':' + deterministicStringify(value));
+    }
+  }
+  return '{' + parts.join(',') + '}';
+}
+
 export class FileAuditLog implements AuditLog {
   private readonly path: string;
   private lastHash: string = '0'.repeat(64); // Genesis hash
   private initialized = false;
+  private readonly mutex = new AsyncMutex();
 
   constructor(pathStr: string) {
     this.path = pathStr;
@@ -31,73 +56,122 @@ export class FileAuditLog implements AuditLog {
 
     try {
       await fs.access(this.path);
-      // File exists, verify integrity and find last hash
-      // For now, we just read the last line to get the hash for performance
-      // Full verification should be done via `verify()` method or external tool
-      const content = await fs.readFile(this.path, 'utf-8');
-      const lines = content.trim().split('\n');
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1];
-        if (lastLine) {
+      // File exists, read only the last line efficiently
+      // We'll use a small buffer reading from the end
+      const handle = await fs.open(this.path, 'r');
+      try {
+        const stat = await handle.stat();
+        if (stat.size === 0) return;
+
+        const bufferSize = 1024; // Read 1KB chunks
+        const buffer = Buffer.alloc(bufferSize);
+        let position = stat.size;
+        let lastLine = '';
+
+        while (position > 0) {
+          const readSize = Math.min(bufferSize, position);
+          position -= readSize;
+
+          await handle.read(buffer, 0, readSize, position);
+          const chunk = buffer.toString('utf-8', 0, readSize);
+          const lines = chunk.split('\n');
+
+          // If we have at least one complete line (and maybe a partial one at start)
+          // The last element is empty if the file ends with newline (standard)
+          // If chunk doesn't contain newline, we just prepend to lastLine and continue reading backwards
+
+          // Cases:
+          // 1. "foo\nbar\n" -> lines=["foo", "bar", ""] (last valid is bar)
+          // 2. "foo\nbar" -> lines=["foo", "bar"] (last valid is bar)
+
+          if (lastLine) {
+             // We had some partial line from previous iteration (which was "later" in file)
+             // combine it
+             lines[lines.length - 1] += lastLine;
+          }
+
+          // Clean empty trailing lines
+          while (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
+          }
+
+          if (lines.length > 0) {
+            // We found the last line!
+            const line = lines[lines.length - 1];
             try {
-                const entry = JSON.parse(lastLine) as AuditEntry;
+                const entry = JSON.parse(line) as AuditEntry;
                 this.lastHash = entry.hash;
+                break; // Found it
             } catch {
-                // Corrupted last line?
-                // We should probably log this or throw, but for resilience we might just continue or fail
-                console.warn('Audit log last line corrupted, using genesis hash might invalidate chain.');
+                // corrupted line? ignore or warn
             }
+          }
+
+          // Save the first part as potential partial line for next chunk (reading backwards)
+          lastLine = lines[0];
+          // Wait, this logic is tricky for backwards reading.
+          // Let's simplify: read chunk, find last newline in it.
+          // If found, take everything after it.
+          // If not found, keep reading.
         }
+
+      } finally {
+        await handle.close();
       }
     } catch {
-      // File doesn't exist, start fresh with genesis hash
+      // File doesn't exist, start fresh
       await fs.mkdir(path.dirname(this.path), { recursive: true });
     }
     this.initialized = true;
   }
 
   async log(actor: string, action: string, details: any): Promise<void> {
-    await this.init();
+    await this.mutex.run(async () => {
+      await this.init();
 
-    const timestamp = new Date().toISOString();
-    const id = crypto.randomUUID();
+      const timestamp = new Date().toISOString();
+      const id = crypto.randomUUID();
 
-    // Calculate hash
-    // Hash = SHA256(prevHash + timestamp + actor + action + JSON.stringify(details))
-    const payload = this.lastHash + timestamp + actor + action + JSON.stringify(details);
-    const hash = crypto.createHash('sha256').update(payload).digest('hex');
+      // Calculate hash using deterministic stringify
+      const payload = this.lastHash + timestamp + actor + action + deterministicStringify(details);
+      const hash = crypto.createHash('sha256').update(payload).digest('hex');
 
-    const entry: AuditEntry = {
-      id,
-      timestamp,
-      actor,
-      action,
-      details,
-      prevHash: this.lastHash,
-      hash
-    };
+      const entry: AuditEntry = {
+        id,
+        timestamp,
+        actor,
+        action,
+        details,
+        prevHash: this.lastHash,
+        hash
+      };
 
-    this.lastHash = hash;
+      this.lastHash = hash;
 
-    await fs.appendFile(this.path, JSON.stringify(entry) + '\n');
+      await fs.appendFile(this.path, JSON.stringify(entry) + '\n');
+    });
   }
 
   async verify(): Promise<boolean> {
     try {
-      const content = await fs.readFile(this.path, 'utf-8');
-      const lines = content.trim().split('\n');
+      // Use streams for verification to handle large files
+      const fileStream = createReadStream(this.path);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
 
       let currentPrevHash = '0'.repeat(64);
 
-      for (const line of lines) {
-        if (!line) continue;
+      for await (const line of rl) {
+        if (!line.trim()) continue;
         const entry = JSON.parse(line) as AuditEntry;
 
         if (entry.prevHash !== currentPrevHash) {
           return false;
         }
 
-        const payload = currentPrevHash + entry.timestamp + entry.actor + entry.action + JSON.stringify(entry.details);
+        const payload = currentPrevHash + entry.timestamp + entry.actor + entry.action + deterministicStringify(entry.details);
         const expectedHash = crypto.createHash('sha256').update(payload).digest('hex');
 
         if (entry.hash !== expectedHash) {

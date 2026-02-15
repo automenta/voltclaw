@@ -251,6 +251,8 @@ export interface Store {
   createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
   searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
   removeMemory?(id: string): Promise<void>;
+  exportMemories?(): Promise<MemoryEntry[]>;
+  consolidateMemories?(): Promise<void>;
 }
 
 export interface MemoryEntry {
