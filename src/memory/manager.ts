@@ -33,4 +33,11 @@ export class MemoryManager {
     const q: MemoryQuery = typeof query === 'string' ? { content: query } : query;
     return this.store.searchMemories(q);
   }
+
+  async forget(id: string): Promise<void> {
+    if (!this.store.removeMemory) {
+      throw new Error('Store does not support memory operations');
+    }
+    await this.store.removeMemory(id);
+  }
 }

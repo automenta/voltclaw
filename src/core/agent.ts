@@ -11,6 +11,7 @@ import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
 import { DeadLetterQueue, InMemoryDLQ } from './dlq.js';
 import { MemoryManager } from '../memory/manager.js';
+import { createMemoryTools } from '../tools/memory.js';
 
 import type {
   VoltClawAgentOptions,
@@ -144,6 +145,11 @@ export class VoltClawAgent {
 
     if (options.tools) {
       this.registerTools(options.tools);
+    }
+
+    // Register memory tools if store supports it
+    if (this.store.createMemory) {
+      this.registerTools(createMemoryTools(this.memory));
     }
 
     if (options.middleware) {

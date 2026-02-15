@@ -248,6 +248,7 @@ export interface Store {
   // Optional MemoryStore interface methods
   createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
   searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
+  removeMemory?(id: string): Promise<void>;
 }
 
 export interface MemoryEntry {

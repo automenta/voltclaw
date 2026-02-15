@@ -160,4 +160,9 @@ export class SQLiteStore implements Store {
       metadata: JSON.parse(row.metadata || '{}')
     }));
   }
+
+  async removeMemory(id: string): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run('DELETE FROM memories WHERE id = ?', id);
+  }
 }
