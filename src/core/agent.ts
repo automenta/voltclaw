@@ -4,8 +4,14 @@ export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { NostrClient } from '../channels/nostr/index.js';
 import { FileStore } from '../memory/index.js';
+import { SQLiteStore } from '../memory/sqlite.js';
 import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
+import { CircuitBreaker } from './circuit-breaker.js';
+import { Retrier } from './retry.js';
+import { DeadLetterQueue, InMemoryDLQ } from './dlq.js';
+import { MemoryManager } from '../memory/manager.js';
+import { createMemoryTools } from '../tools/memory.js';
 
 import type {
   VoltClawAgentOptions,
@@ -27,11 +33,16 @@ import type {
   ToolCallResult,
   LLMConfig,
   ChannelConfig,
-  PersistenceConfig
+  PersistenceConfig,
+  CircuitBreakerConfig,
+  RetryConfig,
+  PermissionConfig,
+  Role
 } from './types.js';
 import {
   VoltClawError,
   ConfigurationError,
+  AuthorizationError,
   MaxDepthExceededError,
   BudgetExceededError,
   TimeoutError,
@@ -44,6 +55,12 @@ const DEFAULT_BUDGET_USD = 0.75;
 const DEFAULT_TIMEOUT_MS = 600000;
 const DEFAULT_MAX_HISTORY = 60;
 const DEFAULT_PRUNE_INTERVAL = 300000;
+const DEFAULT_CB_THRESHOLD = 5;
+const DEFAULT_CB_RESET_MS = 60000;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_BASE_DELAY = 1000;
+const DEFAULT_RETRY_MAX_DELAY = 10000;
+const DEFAULT_RETRY_JITTER = 0.1;
 
 interface AgentState {
   isRunning: boolean;
@@ -58,6 +75,13 @@ export class VoltClawAgent {
   private readonly pluginManager: PluginManager;
   private workspaceContext: string = '';
   private readonly tools: Map<string, Tool> = new Map();
+  private readonly circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  private readonly circuitBreakerConfig: CircuitBreakerConfig;
+  private readonly retrier: Retrier;
+  private readonly fallbacks: Record<string, string>;
+  public readonly dlq: DeadLetterQueue;
+  public readonly memory: MemoryManager;
+  private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
     onMessage?: (ctx: MessageContext) => Promise<void>;
@@ -97,8 +121,35 @@ export class VoltClawAgent {
     this.maxHistory = options.history?.maxMessages ?? DEFAULT_MAX_HISTORY;
     this.autoPruneInterval = options.history?.autoPruneInterval ?? DEFAULT_PRUNE_INTERVAL;
 
+    this.circuitBreakerConfig = options.circuitBreaker ?? {
+      failureThreshold: DEFAULT_CB_THRESHOLD,
+      resetTimeoutMs: DEFAULT_CB_RESET_MS
+    };
+
+    const retryConfig: RetryConfig = options.retry ?? {
+      maxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
+      baseDelayMs: DEFAULT_RETRY_BASE_DELAY,
+      maxDelayMs: DEFAULT_RETRY_MAX_DELAY,
+      jitterFactor: DEFAULT_RETRY_JITTER
+    };
+    this.retrier = new Retrier(retryConfig);
+
+    this.fallbacks = options.fallbacks ?? {};
+
+    // DLQ initialization (currently only memory supported)
+    this.dlq = new DeadLetterQueue();
+
+    this.memory = new MemoryManager(this.store);
+
+    this.permissions = options.permissions ?? { policy: 'allow_all' };
+
     if (options.tools) {
       this.registerTools(options.tools);
+    }
+
+    // Register memory tools if store supports it
+    if (this.store.createMemory) {
+      this.registerTools(createMemoryTools(this.memory));
     }
 
     if (options.middleware) {
@@ -166,6 +217,9 @@ export class VoltClawAgent {
       if (config.type === 'file') {
         return new FileStore({ path: config.path ?? `${VOLTCLAW_DIR}/data.json` });
       }
+      if (config.type === 'sqlite') {
+        return new SQLiteStore({ path: config.path });
+      }
     }
     throw new ConfigurationError('Invalid persistence configuration');
   }
@@ -180,6 +234,13 @@ export class VoltClawAgent {
       warn: (_message: string, _data?: Record<string, unknown>) => {},
       error: (_message: string, _data?: Record<string, unknown>) => {}
     };
+  }
+
+  private getCircuitBreaker(name: string): CircuitBreaker {
+    if (!this.circuitBreakers.has(name)) {
+      this.circuitBreakers.set(name, new CircuitBreaker(this.circuitBreakerConfig));
+    }
+    return this.circuitBreakers.get(name)!;
   }
 
   private registerTools(tools: Tool[] | { builtins?: string[]; directories?: string[] }): void {
@@ -306,9 +367,10 @@ export class VoltClawAgent {
       ...session.history.slice(-this.maxHistory)
     ];
 
-    let response = await this.llm.chat(messages, {
+    const cb = this.getCircuitBreaker('llm');
+    let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    });
+    })));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -327,9 +389,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await this.llm.chat(messages, {
+      response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      });
+      })));
     }
 
     const reply = response.content || '[error]';
@@ -504,9 +566,10 @@ export class VoltClawAgent {
       { role: 'user', content }
     ];
 
-    let response = await this.llm.chat(messages, {
+    const cb = this.getCircuitBreaker('llm');
+    let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
       tools: this.getToolDefinitions(session.depth)
-    });
+    })));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({
@@ -524,9 +587,9 @@ export class VoltClawAgent {
         });
       }
 
-      response = await this.llm.chat(messages, {
+      response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(session.depth)
-      });
+      })));
     }
 
     const reply = response.content || '[error]';
@@ -579,9 +642,10 @@ Parent context: ${contextSummary}${mustFinish}`;
     ];
 
     try {
-      const response = await this.llm.chat(messages, {
+      const cb = this.getCircuitBreaker('llm');
+      const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(depth)
-      });
+      })));
       
       const result = response.content || '[no content]';
       await this.channel.send(
@@ -655,7 +719,8 @@ Parent context: ${contextSummary}${mustFinish}`;
       { role: 'user', content: prompt }
     ];
 
-    const response = await this.llm.chat(messages).catch(() => ({
+    const cb = this.getCircuitBreaker('llm');
+    const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages))).catch(() => ({
       content: 'Synthesis failed. Raw results:\n' + results
     }));
 
@@ -682,6 +747,12 @@ Parent context: ${contextSummary}${mustFinish}`;
         return { error: `Tool not found: ${name}` };
       }
 
+      // Check RBAC
+      const role = this.getRole(from);
+      if (!this.checkPermission(tool, role)) {
+        throw new AuthorizationError(`User ${from.slice(0, 8)} (role: ${role}) not authorized for tool ${name}`);
+      }
+
       if (this.hooks.onToolApproval) {
           const approved = await this.hooks.onToolApproval(name, args);
           if (!approved) {
@@ -689,10 +760,28 @@ Parent context: ${contextSummary}${mustFinish}`;
           }
       }
 
-      const result = await tool.execute(args);
+      const cb = this.getCircuitBreaker(name);
+      const fallbackName = this.fallbacks[name];
+      const fallback = fallbackName
+        ? () => this.executeTool(fallbackName, args, session, from).then(r => {
+             if (r.error) throw new Error(r.error);
+             return r;
+           })
+        : undefined;
+
+      const result = await cb.execute(
+        () => this.retrier.execute(() => tool.execute(args)),
+        fallback
+      );
       return result as ToolCallResult;
     } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) };
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      // If we reach here, it means retries failed, circuit breaker failed (or open), and fallback failed (or missing).
+      // Push to DLQ.
+      await this.dlq.push(name, args, err);
+
+      return { error: err.message };
     }
   }
 
@@ -923,6 +1012,31 @@ You are persistent, efficient, and recursive.`;
         .replace('{tools}', toolNamesStr)
         .replace('{depthWarning}', depthWarning)
         + this.workspaceContext;
+  }
+
+  private getRole(pubkey: string): Role {
+    if (this.channel.identity.publicKey === pubkey) {
+      return 'admin'; // Self is always admin
+    }
+    if (this.permissions.admins?.includes(pubkey)) {
+      return 'admin';
+    }
+    // TODO: More role logic (user/agent map)
+    return 'user';
+  }
+
+  private checkPermission(tool: Tool, role: Role): boolean {
+    if (role === 'admin') return true;
+
+    if (tool.requiredRoles) {
+      return tool.requiredRoles.includes(role);
+    }
+
+    // Default policy if no roles specified
+    if (this.permissions.policy === 'deny_all') {
+      return false;
+    }
+    return true; // Allow all by default
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {
@@ -1178,32 +1292,20 @@ class CallBuilder {
   }
 }
 
+/**
+ * @deprecated Use Retrier class instead
+ */
 async function withRetry<T>(
   fn: () => Promise<T>,
   options: { maxAttempts: number; baseDelayMs: number; maxDelayMs: number }
 ): Promise<T> {
-  let lastError: Error | undefined;
-
-  for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      if (attempt === options.maxAttempts || !isRetryable(error)) {
-        throw lastError;
-      }
-
-      const delay = Math.min(
-        options.baseDelayMs * Math.pow(2, attempt - 1),
-        options.maxDelayMs
-      );
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError ?? new Error('Retry failed');
+  const retrier = new Retrier({
+    maxAttempts: options.maxAttempts,
+    baseDelayMs: options.baseDelayMs,
+    maxDelayMs: options.maxDelayMs,
+    jitterFactor: 0
+  });
+  return retrier.execute(fn);
 }
 
 export { withRetry };

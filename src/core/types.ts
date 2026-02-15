@@ -11,6 +11,35 @@ export interface VoltClawAgentOptions {
   logger?: Logger | LoggerConfig;
   interactive?: boolean;
   plugins?: (string | import('./plugin.js').VoltClawPlugin)[];
+  circuitBreaker?: CircuitBreakerConfig;
+  retry?: RetryConfig;
+  fallbacks?: Record<string, string>;
+  dlq?: DLQConfig;
+  permissions?: PermissionConfig;
+}
+
+export type Role = 'admin' | 'user' | 'agent' | 'subagent';
+
+export interface PermissionConfig {
+  admins?: string[]; // Public keys of admins
+  policy?: 'allow_all' | 'deny_all'; // Default policy if no role specified on tool
+}
+
+export interface DLQConfig {
+  type: 'memory' | 'file';
+  path?: string;
+}
+
+export interface RetryConfig {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitterFactor?: number;
+}
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
 }
 
 export interface LLMConfig {
@@ -216,6 +245,28 @@ export interface Store {
   load(): Promise<void>;
   save(): Promise<void>;
   clear(): void;
+  // Optional MemoryStore interface methods
+  createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
+  searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
+  removeMemory?(id: string): Promise<void>;
+}
+
+export interface MemoryEntry {
+  id: string;
+  type: 'working' | 'long_term' | 'episodic';
+  content: string;
+  tags?: string[];
+  importance?: number;
+  timestamp: number;
+  contextId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryQuery {
+  type?: MemoryEntry['type'];
+  tags?: string[];
+  content?: string; // Simple text search
+  limit?: number;
 }
 
 export interface Session {
@@ -246,6 +297,7 @@ export interface Tool {
   execute: (args: Record<string, unknown>) => Promise<ToolCallResult> | ToolCallResult;
   maxDepth?: number;
   costMultiplier?: number;
+  requiredRoles?: Role[];
 }
 
 export interface ToolParameters {

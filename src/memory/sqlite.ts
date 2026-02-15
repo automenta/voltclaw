@@ -1,0 +1,168 @@
+import sqlite3 from 'sqlite3';
+import { open, type Database } from 'sqlite';
+import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
+import { VOLTCLAW_DIR } from '../core/bootstrap.js';
+import fs from 'fs';
+import path from 'path';
+
+export class SQLiteStore implements Store {
+  private db?: Database;
+  private cache: Map<string, Session> = new Map();
+  private readonly dbPath: string;
+
+  constructor(options: { path?: string } = {}) {
+    this.dbPath = options.path ?? path.join(VOLTCLAW_DIR, 'voltclaw.db');
+
+    // Ensure directory exists
+    const dir = path.dirname(this.dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  async load(): Promise<void> {
+    this.db = await open({
+      filename: this.dbPath,
+      driver: sqlite3.Database
+    });
+
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        key TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT, -- JSON array
+        importance INTEGER,
+        timestamp INTEGER NOT NULL,
+        context_id TEXT,
+        metadata TEXT -- JSON object
+      );
+    `);
+
+    const rows = await this.db.all('SELECT key, data FROM sessions');
+    for (const row of rows) {
+      try {
+        this.cache.set(row.key, JSON.parse(row.data));
+      } catch {
+        // ignore corrupt data
+      }
+    }
+  }
+
+  get(key: string, isSelf: boolean = false): Session {
+    if (!this.cache.has(key)) {
+      this.cache.set(key, {
+        history: [],
+        callCount: 0,
+        estCostUSD: 0,
+        actualTokensUsed: 0,
+        subTasks: {},
+        depth: 0,
+        topLevelStartedAt: 0
+      });
+    }
+    return this.cache.get(key)!;
+  }
+
+  getAll(): Record<string, Session> {
+    return Object.fromEntries(this.cache);
+  }
+
+  async save(): Promise<void> {
+    if (!this.db) await this.load();
+
+    const stmt = await this.db!.prepare(`
+      INSERT INTO sessions (key, data, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        data = excluded.data,
+        updated_at = excluded.updated_at
+    `);
+
+    for (const [key, session] of this.cache.entries()) {
+      await stmt.run(key, JSON.stringify(session), Date.now());
+    }
+    await stmt.finalize();
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  async createMemory(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string> {
+    if (!this.db) await this.load();
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const timestamp = Date.now();
+
+    await this.db!.run(
+      `INSERT INTO memories (id, type, content, tags, importance, timestamp, context_id, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      entry.type,
+      entry.content,
+      JSON.stringify(entry.tags ?? []),
+      entry.importance ?? 0,
+      timestamp,
+      entry.contextId ?? null,
+      JSON.stringify(entry.metadata ?? {})
+    );
+
+    return id;
+  }
+
+  async searchMemories(query: MemoryQuery): Promise<MemoryEntry[]> {
+    if (!this.db) await this.load();
+
+    let sql = 'SELECT * FROM memories WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (query.type) {
+      sql += ' AND type = ?';
+      params.push(query.type);
+    }
+
+    if (query.content) {
+      sql += ' AND content LIKE ?';
+      params.push(`%${query.content}%`);
+    }
+
+    // Tag search in JSON array is tricky in standard sqlite without extensions
+    // Simple naive check: LIKE '%"tag"%'
+    if (query.tags && query.tags.length > 0) {
+      for (const tag of query.tags) {
+        sql += ' AND tags LIKE ?';
+        params.push(`%${tag}%`); // Very loose matching, improved in future
+      }
+    }
+
+    sql += ' ORDER BY timestamp DESC';
+
+    if (query.limit) {
+      sql += ' LIMIT ?';
+      params.push(query.limit);
+    }
+
+    const rows = await this.db!.all(sql, params);
+    return rows.map(row => ({
+      id: row.id,
+      type: row.type as MemoryEntry['type'],
+      content: row.content,
+      tags: JSON.parse(row.tags || '[]'),
+      importance: row.importance,
+      timestamp: row.timestamp,
+      contextId: row.context_id,
+      metadata: JSON.parse(row.metadata || '{}')
+    }));
+  }
+
+  async removeMemory(id: string): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run('DELETE FROM memories WHERE id = ?', id);
+  }
+}
