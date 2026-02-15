@@ -4,6 +4,7 @@ export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { NostrClient } from '../channels/nostr/index.js';
 import { FileStore } from '../memory/index.js';
+import { SQLiteStore } from '../memory/sqlite.js';
 import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
@@ -205,6 +206,9 @@ export class VoltClawAgent {
       const config = persistence as import('./types.js').PersistenceConfig;
       if (config.type === 'file') {
         return new FileStore({ path: config.path ?? `${VOLTCLAW_DIR}/data.json` });
+      }
+      if (config.type === 'sqlite') {
+        return new SQLiteStore({ path: config.path });
       }
     }
     throw new ConfigurationError('Invalid persistence configuration');

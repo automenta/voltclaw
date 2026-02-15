@@ -67,6 +67,8 @@
     "inquirer": "^13.2.2",
     "nostr-relaypool": "^0.6.30",
     "nostr-tools": "^2.23.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
     "ws": "^8.19.0",
     "zod": "^3.23.8"
   },

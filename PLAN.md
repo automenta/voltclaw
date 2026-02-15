@@ -51,8 +51,8 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
   - Multi-factor identity for sensitive operations
   - Identity delegation for sub-agents
 
-- [x] **Authorization Framework** (In Progress)
-  - Role-based access control (RBAC) with roles: admin, user, agent, subagent
+- [x] **Authorization Framework**
+  - Role-based access control (RBAC) with roles: admin, user, agent, subagent (Implemented)
   - Permission scopes per tool (read, write, execute, call)
   - Depth-aware permissions (deeper = more restricted)
   - Budget-based permissions (cost limits per role)
