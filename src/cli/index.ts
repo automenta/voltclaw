@@ -10,7 +10,7 @@ import { startCommand } from './commands/start.js';
 import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
-import { dlqCommand } from './commands/dlq.js';
+import { errorCommand } from './commands/errors.js';
 import { configureCommand } from './commands/configure.js';
 import { askApproval } from './interactive.js';
 import path from 'path';
@@ -54,7 +54,7 @@ Commands:
   dm <npub> <msg>     Send a direct message
   health              Run system health checks
   session [cmd]       Manage sessions (list, show, clear, prune)
-  dlq [cmd]           Manage Dead Letter Queue (list, show, delete, clear)
+  errors [cmd]        Manage Error Queue (list, show, delete, clear)
   version             Show version info
   help                Show this help message
 
@@ -88,15 +88,15 @@ async function oneShotQuery(
     plugins: config.plugins,
     tools,
     hooks: {
-       onCall: async (ctx) => {
-         if (options.recursive) {
-           const indicator = options.verbose ? ctx.task.slice(0, 60) : '';
-           console.log(`  → [Depth ${ctx.depth}] Calling... ${indicator}`);
-         }
-       },
-       onToolApproval: options.interactive ? async (tool, args) => {
-         return askApproval(tool, args);
-       } : undefined
+      onCall: async (ctx) => {
+        if (options.recursive) {
+          const indicator = options.verbose ? ctx.task.slice(0, 60) : '';
+          console.log(`  → [Depth ${ctx.depth}] Calling... ${indicator}`);
+        }
+      },
+      onToolApproval: options.interactive ? async (tool, args) => {
+        return askApproval(tool, args);
+      } : undefined
     }
   });
 
@@ -183,8 +183,8 @@ async function run(args: string[]): Promise<void> {
       await sessionCommand(positional[1] || 'list', positional[2]);
       break;
     }
-    case 'dlq': {
-      await dlqCommand(positional[1] || 'list', positional[2]);
+    case 'errors': {
+      await errorCommand(positional[1] || 'list', positional[2]);
       break;
     }
     case 'keys': {
@@ -218,10 +218,10 @@ async function run(args: string[]): Promise<void> {
 if (import.meta.url === `file://${process.argv[1]}`) {
   (async () => {
     try {
-        await run(process.argv.slice(2));
+      await run(process.argv.slice(2));
     } catch (error) {
-        console.error('Fatal error:', error);
-        process.exit(1);
+      console.error('Fatal error:', error);
+      process.exit(1);
     }
   })();
 }

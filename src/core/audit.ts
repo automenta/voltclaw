@@ -85,9 +85,9 @@ export class FileAuditLog implements AuditLog {
           // 2. "foo\nbar" -> lines=["foo", "bar"] (last valid is bar)
 
           if (lastLine) {
-             // We had some partial line from previous iteration (which was "later" in file)
-             // combine it
-             lines[lines.length - 1] += lastLine;
+            // We had some partial line from previous iteration (which was "later" in file)
+            // combine it
+            lines[lines.length - 1] += lastLine;
           }
 
           // Clean empty trailing lines
@@ -99,11 +99,11 @@ export class FileAuditLog implements AuditLog {
             // We found the last line!
             const line = lines[lines.length - 1];
             try {
-                const entry = JSON.parse(line) as AuditEntry;
-                this.lastHash = entry.hash;
-                break; // Found it
+              const entry = JSON.parse(line) as AuditEntry;
+              this.lastHash = entry.hash;
+              break; // Found it
             } catch {
-                // corrupted line? ignore or warn
+              // corrupted line? ignore or warn
             }
           }
 
@@ -120,7 +120,7 @@ export class FileAuditLog implements AuditLog {
       }
     } catch {
       // File doesn't exist, start fresh
-      await fs.mkdir(path.dirname(this.path), { recursive: true });
+      await fs.mkdir(path.dirname(this.path)!, { recursive: true });
     }
     this.initialized = true;
   }

@@ -1,0 +1,152 @@
+import fs from 'fs/promises';
+import path from 'path';
+import { AsyncMutex } from './utils.js';
+
+export interface FailedOperation {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    error: string;
+    timestamp: Date;
+    retryCount: number;
+}
+
+export interface ErrorStore {
+    save(op: FailedOperation): Promise<void>;
+    list(): Promise<FailedOperation[]>;
+    remove(id: string): Promise<void>;
+    clear(): Promise<void>;
+    get(id: string): Promise<FailedOperation | undefined>;
+}
+
+export class InMemoryErrorQueue implements ErrorStore {
+    private queue: Map<string, FailedOperation> = new Map();
+
+    async save(op: FailedOperation): Promise<void> {
+        this.queue.set(op.id, op);
+    }
+
+    async list(): Promise<FailedOperation[]> {
+        return Array.from(this.queue.values());
+    }
+
+    async remove(id: string): Promise<void> {
+        this.queue.delete(id);
+    }
+
+    async clear(): Promise<void> {
+        this.queue.clear();
+    }
+
+    async get(id: string): Promise<FailedOperation | undefined> {
+        return this.queue.get(id);
+    }
+}
+
+export class FileErrorQueue implements ErrorStore {
+    private queue: Map<string, FailedOperation> = new Map();
+    private readonly path: string;
+    private readonly mutex = new AsyncMutex();
+
+    constructor(pathStr: string) {
+        this.path = pathStr;
+    }
+
+    private async load(): Promise<void> {
+        try {
+            const data = await fs.readFile(this.path, 'utf-8');
+            const ops = JSON.parse(data) as FailedOperation[];
+            this.queue = new Map(ops.map(op => [op.id, {
+                ...op,
+                timestamp: new Date(op.timestamp)
+            }]));
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                this.queue.clear();
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    private async persist(): Promise<void> {
+        await fs.mkdir(path.dirname(this.path), { recursive: true });
+        const ops = Array.from(this.queue.values());
+        await fs.writeFile(this.path, JSON.stringify(ops, null, 2));
+    }
+
+    async save(op: FailedOperation): Promise<void> {
+        await this.mutex.run(async () => {
+            await this.load();
+            this.queue.set(op.id, op);
+            await this.persist();
+        });
+    }
+
+    async list(): Promise<FailedOperation[]> {
+        return this.mutex.run(async () => {
+            await this.load();
+            return Array.from(this.queue.values());
+        });
+    }
+
+    async remove(id: string): Promise<void> {
+        await this.mutex.run(async () => {
+            await this.load();
+            this.queue.delete(id);
+            await this.persist();
+        });
+    }
+
+    async clear(): Promise<void> {
+        await this.mutex.run(async () => {
+            this.queue.clear();
+            await this.persist();
+        });
+    }
+
+    async get(id: string): Promise<FailedOperation | undefined> {
+        return this.mutex.run(async () => {
+            await this.load();
+            return this.queue.get(id);
+        });
+    }
+}
+
+export class ErrorQueue {
+    private readonly store: ErrorStore;
+
+    constructor(store?: ErrorStore) {
+        this.store = store ?? new InMemoryErrorQueue();
+    }
+
+    async push(tool: string, args: Record<string, unknown>, error: Error, retryCount: number = 0): Promise<string> {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const op: FailedOperation = {
+            id,
+            tool,
+            args,
+            error: error.message,
+            timestamp: new Date(),
+            retryCount
+        };
+        await this.store.save(op);
+        return id;
+    }
+
+    async list(): Promise<FailedOperation[]> {
+        return this.store.list();
+    }
+
+    async remove(id: string): Promise<void> {
+        await this.store.remove(id);
+    }
+
+    async clear(): Promise<void> {
+        await this.store.clear();
+    }
+
+    async get(id: string): Promise<FailedOperation | undefined> {
+        return this.store.get(id);
+    }
+}

@@ -9,8 +9,12 @@ import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
-import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
-import { createDLQTools } from '../tools/dlq.js';
+import { ErrorQueue, InMemoryErrorQueue, FileErrorQueue } from './error-queue.js';
+import { createErrorTools } from '../tools/error-tools.js';
+import { SessionManager } from './session-manager.js';
+import { ToolExecutor } from './tool-executor.js';
+import { MessageHandler } from './message-handler.js';
+import { CallHandler } from './call-handler.js';
 import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager } from '../memory/manager.js';
 import { createMemoryTools } from '../tools/memory.js';
@@ -81,7 +85,11 @@ export class VoltClawAgent {
   private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly retrier: Retrier;
   private readonly fallbacks: Record<string, string>;
-  public readonly dlq: DeadLetterQueue;
+  public readonly errors: ErrorQueue;
+  private readonly sessionManager: SessionManager;
+  private readonly toolExecutor: ToolExecutor;
+  private readonly messageHandler: MessageHandler;
+  private readonly callHandler: CallHandler;
   public readonly memory: MemoryManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
@@ -116,7 +124,7 @@ export class VoltClawAgent {
     this.store = this.resolveStore(options.persistence);
     this.workspace = new Workspace();
     this.pluginManager = new PluginManager();
-    
+
     this.maxDepth = options.call?.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.maxCalls = options.call?.maxCalls ?? DEFAULT_MAX_CALLS;
     this.budgetUSD = options.call?.budgetUSD ?? DEFAULT_BUDGET_USD;
@@ -139,16 +147,16 @@ export class VoltClawAgent {
 
     this.fallbacks = options.fallbacks ?? {};
 
-    // DLQ initialization
-    if (options.dlq?.type === 'file' && options.dlq.path) {
-      this.dlq = new DeadLetterQueue(new FileDLQ(options.dlq.path));
+    // ErrorQueue initialization
+    if (options.errors?.type === 'file' && options.errors.path) {
+      this.errors = new ErrorQueue(new FileErrorQueue(options.errors.path));
     } else {
-      this.dlq = new DeadLetterQueue(new InMemoryDLQ());
+      this.errors = new ErrorQueue(new InMemoryErrorQueue());
     }
 
     // Audit Log initialization
     if (options.audit?.path) {
-        this.auditLog = new FileAuditLog(options.audit.path);
+      this.auditLog = new FileAuditLog(options.audit.path);
     }
 
     this.memory = new MemoryManager(this.store);
@@ -156,12 +164,17 @@ export class VoltClawAgent {
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
     if (options.tools) {
-      this.registerTools(options.tools);
+      // Handle different tool formats
+      if (Array.isArray(options.tools)) {
+        this.registerTools(options.tools);
+      }
+      // If it's a ToolsConfig, we'd need to load from it
+      // For now treating as Tool[] array
     }
 
-    // Register DLQ tools
-    if (options.dlq?.enableTools) {
-      this.registerTools(createDLQTools(this));
+    // Register error tools
+    if (options.errors?.enableTools) {
+      this.registerTools(createErrorTools(this));
     }
 
     // Register memory tools if store supports it
@@ -182,6 +195,60 @@ export class VoltClawAgent {
     }
 
     this.logger = this.resolveLogger(options.logger);
+
+    // Initialize new modules
+    this.sessionManager = new SessionManager({
+      store: this.store,
+      maxHistory: this.maxHistory,
+      timeoutMs: this.timeoutMs
+    });
+
+    this.toolExecutor = new ToolExecutor({
+      getCircuitBreaker: (name) => this.getCircuitBreaker(name),
+      retrier: this.retrier,
+      errorQueue: this.errors,
+      auditLog: this.auditLog,
+      fallbacks: this.fallbacks,
+      maxDepth: this.maxDepth,
+      checkPermission: (tool, role) => this.checkPermission(tool, role),
+      getRole: (pubkey) => this.getRole(pubkey),
+      onToolApproval: this.hooks.onToolApproval
+    });
+
+    // Register tools with toolExecutor
+    for (const [_, tool] of this.tools) {
+      this.toolExecutor.registerTool(tool);
+    }
+
+    this.callHandler = new CallHandler({
+      sessionManager: this.sessionManager,
+      channel: this.channel,
+      llm: this.llm,
+      getCircuitBreaker: (name) => this.getCircuitBreaker(name),
+      retrier: this.retrier,
+      maxDepth: this.maxDepth,
+      maxCalls: this.maxCalls,
+      budgetUSD: this.budgetUSD
+    });
+
+    this.messageHandler = new MessageHandler({
+      sessionManager: this.sessionManager,
+      toolExecutor: this.toolExecutor,
+      callHandler: this.callHandler,
+      llm: this.llm,
+      channel: this.channel,
+      getCircuitBreaker: (name) => this.getCircuitBreaker(name),
+      retrier: this.retrier,
+      auditLog: this.auditLog,
+      logger: this.logger,
+      maxHistory: this.maxHistory,
+      buildSystemPrompt: (depth) => this.buildSystemPrompt(depth),
+      onMessage: this.hooks.onMessage,
+      onReply: this.hooks.onReply,
+      onCall: this.hooks.onCall,
+      onError: this.hooks.onError,
+      emit: (event, ...args) => this.emit(event, ...args)
+    });
   }
 
   private resolveLLM(llm: VoltClawAgentOptions['llm']): LLMProvider {
@@ -246,10 +313,10 @@ export class VoltClawAgent {
       return logger as Logger;
     }
     return {
-      debug: (_message: string, _data?: Record<string, unknown>) => {},
-      info: (_message: string, _data?: Record<string, unknown>) => {},
-      warn: (_message: string, _data?: Record<string, unknown>) => {},
-      error: (_message: string, _data?: Record<string, unknown>) => {}
+      debug: (_message: string, _data?: Record<string, unknown>) => { },
+      info: (_message: string, _data?: Record<string, unknown>) => { },
+      warn: (_message: string, _data?: Record<string, unknown>) => { },
+      error: (_message: string, _data?: Record<string, unknown>) => { }
     };
   }
 
@@ -260,10 +327,13 @@ export class VoltClawAgent {
     return this.circuitBreakers.get(name)!;
   }
 
-  private registerTools(tools: Tool[] | { builtins?: string[]; directories?: string[] }): void {
-    if (Array.isArray(tools)) {
-      for (const tool of tools) {
-        this.tools.set(tool.name, tool);
+  private registerTools(tools: Tool | Tool[]): void {
+    const toolArray = Array.isArray(tools) ? tools : [tools];
+    for (const tool of toolArray) {
+      this.tools.set(tool.name, tool);
+      // Also register with toolExecutor if it exists (during construction it may not)
+      if (this.toolExecutor) {
+        this.toolExecutor.registerTool(tool);
       }
     }
   }
@@ -294,12 +364,12 @@ export class VoltClawAgent {
 
     // Try to bootstrap if needed
     try {
-        await bootstrap();
-        this.systemPromptTemplate = await loadSystemPrompt();
-        await this.workspace.ensureExists();
-        this.workspaceContext = await this.workspace.loadContext();
+      await bootstrap();
+      this.systemPromptTemplate = await loadSystemPrompt();
+      await this.workspace.ensureExists();
+      this.workspaceContext = await this.workspace.loadContext();
     } catch (e) {
-        this.logger.warn("Failed to bootstrap configuration", { error: String(e) });
+      this.logger.warn("Failed to bootstrap configuration", { error: String(e) });
     }
 
     await this.channel.start();
@@ -372,13 +442,13 @@ export class VoltClawAgent {
     if (session.depth === undefined) session.depth = 0;
 
     session.history.push({ role: 'user', content: message });
-    
+
     // Use handleTopLevel logic but wait for result?
     // query() is synchronous-looking but really async.
     // We should reuse handleTopLevel logic but capture the final answer.
     // However, handleTopLevel sends via transport.
     // For local query, we want the result directly.
-    
+
     // Adapted from handleTopLevel for direct response:
     session.subTasks = {};
     session.callCount = 0;
@@ -423,7 +493,7 @@ export class VoltClawAgent {
     session.history.push({ role: 'assistant', content: reply });
     this.pruneHistory(session);
     await this.store.save?.();
-    
+
     return reply;
   }
 
@@ -471,7 +541,7 @@ export class VoltClawAgent {
         if (chunk.toolCalls) {
           const tc = chunk.toolCalls;
           if (tc.id && tc.name && tc.arguments) {
-             toolCalls.push(tc as import('./types.js').ToolCall);
+            toolCalls.push(tc as import('./types.js').ToolCall);
           }
         }
       }
@@ -530,41 +600,11 @@ export class VoltClawAgent {
       return;
     }
 
-    const isSelf = from === this.channel.identity.publicKey;
-    const session = this.store.get(isSelf ? 'self' : from, isSelf);
-
-    const ctx: MessageContext = {
-      from,
-      content,
-      timestamp: new Date(),
-      metadata: meta
-    };
-    await this.auditLog?.log(from, 'message_received', { content });
-    await this.hooks.onMessage?.(ctx);
-    this.emit('message', ctx);
-
-    try {
-      const parsed = this.tryParseJSON(content);
-      
-      if (parsed?.type === 'subtask') {
-        await this.handleSubtask(session, parsed, from);
-      } else if (parsed?.type === 'subtask_result') {
-        await this.handleSubtaskResult(session, parsed, from);
-      } else {
-        await this.handleTopLevel(session, content, from);
-      }
-    } catch (error) {
-      const errCtx: ErrorContext = {
-        error: error instanceof Error ? error : new Error(String(error)),
-        context: { from, content: content.slice(0, 100) },
-        timestamp: new Date()
-      };
-      await this.hooks.onError?.(errCtx);
-      this.emit('error', errCtx);
-      this.logger.error('Error handling message', { error: String(error), from });
-    }
+    // Delegate to messageHandler
+    await this.messageHandler.handleMessage(from, content, meta);
   }
 
+  // These methods are no longer used directly, kept for compatibility
   private tryParseJSON(text: string): Record<string, unknown> | null {
     try {
       return JSON.parse(text) as Record<string, unknown>;
@@ -625,7 +665,7 @@ export class VoltClawAgent {
     await this.store.save?.();
 
     await this.channel.send(from, reply);
-    
+
     const replyCtx: ReplyContext = {
       to: from,
       content: reply,
@@ -672,7 +712,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(depth)
       })));
-      
+
       const result = response.content || '[no content]';
       await this.channel.send(
         this.channel.identity.publicKey,
@@ -725,7 +765,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     const allDone = Object.values(session.subTasks).every(
       (s: { arrived: boolean; error?: string }) => s.arrived || s.error
     );
-    
+
     if (allDone && session.topLevelStartedAt > 0) {
       await this.synthesize(session);
     }
@@ -763,7 +803,7 @@ Parent context: ${contextSummary}${mustFinish}`;
       if (name === 'call') {
         return await this.executeCall(args, session, from);
       }
-      
+
       if (name === 'call_parallel') {
         return await this.executeCallParallel(args, session, from);
       }
@@ -781,11 +821,11 @@ Parent context: ${contextSummary}${mustFinish}`;
       }
 
       if (this.hooks.onToolApproval) {
-          const approved = await this.hooks.onToolApproval(name, args);
-          if (!approved) {
-              await this.auditLog?.log(from, 'tool_denied', { tool: name, reason: 'user_approval' });
-              return { error: 'Tool execution denied by user' };
-          }
+        const approved = await this.hooks.onToolApproval(name, args);
+        if (!approved) {
+          await this.auditLog?.log(from, 'tool_denied', { tool: name, reason: 'user_approval' });
+          return { error: 'Tool execution denied by user' };
+        }
       }
 
       await this.auditLog?.log(from, 'tool_execute', { tool: name, args });
@@ -794,9 +834,9 @@ Parent context: ${contextSummary}${mustFinish}`;
       const fallbackName = this.fallbacks[name];
       const fallback = fallbackName
         ? () => this.executeTool(fallbackName, args, session, from).then(r => {
-             if (r.error) throw new Error(r.error);
-             return r;
-           })
+          if (r.error) throw new Error(r.error);
+          return r;
+        })
         : undefined;
 
       const result = await cb.execute(
@@ -812,7 +852,7 @@ Parent context: ${contextSummary}${mustFinish}`;
 
       // If we reach here, it means retries failed, circuit breaker failed (or open), and fallback failed (or missing).
       // Push to DLQ.
-      await this.dlq.push(name, args, err);
+      await this.errors.push(name, args, err);
 
       return { error: err.message };
     }
@@ -999,17 +1039,17 @@ Parent context: ${contextSummary}${mustFinish}`;
         const tool = this.tools.get(name);
         return tool && (tool.maxDepth ?? Infinity) >= depth;
       });
-    
+
     if (depth < this.maxDepth) {
       toolNames.push('call');
     }
-    
+
     const toolNamesStr = toolNames.join(', ');
 
     let template = this.systemPromptTemplate;
     if (!template) {
-        // Fallback if loadSystemPrompt failed or hasn't run
-        template = `You are VoltClaw (depth {depth}/{maxDepth}).
+      // Fallback if loadSystemPrompt failed or hasn't run
+      template = `You are VoltClaw (depth {depth}/{maxDepth}).
 A recursive autonomous coding agent.
 
 OBJECTIVE:
@@ -1035,16 +1075,16 @@ You are persistent, efficient, and recursive.`;
     }
 
     const depthWarning = depth >= this.maxDepth - 1
-        ? '- WARNING: MAX DEPTH REACHED. DO NOT CALL. SOLVE DIRECTLY.'
-        : '';
+      ? '- WARNING: MAX DEPTH REACHED. DO NOT CALL. SOLVE DIRECTLY.'
+      : '';
 
     return template
-        .replace('{depth}', String(depth))
-        .replace('{maxDepth}', String(this.maxDepth))
-        .replace('{budget}', String(this.budgetUSD))
-        .replace('{tools}', toolNamesStr)
-        .replace('{depthWarning}', depthWarning)
-        + this.workspaceContext;
+      .replace('{depth}', String(depth))
+      .replace('{maxDepth}', String(this.maxDepth))
+      .replace('{budget}', String(this.budgetUSD))
+      .replace('{tools}', toolNamesStr)
+      .replace('{depthWarning}', depthWarning)
+      + this.workspaceContext;
   }
 
   private getRole(pubkey: string): Role {
@@ -1073,63 +1113,15 @@ You are persistent, efficient, and recursive.`;
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {
-    const definitions: Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> = 
-      Array.from(this.tools.entries())
-        .filter(([_, tool]) => (tool.maxDepth ?? Infinity) >= depth)
-        .map(([name, tool]) => ({ name, description: tool.description, parameters: tool.parameters }));
-    
-    if (depth < this.maxDepth) {
-      definitions.push({
-        name: 'call',
-        description: 'Call a child agent to handle a sub-task. Use for complex tasks that can be parallelized or decomposed.',
-        parameters: {
-          type: 'object',
-          properties: {
-            task: { type: 'string', description: 'The specific task to call the child agent with' },
-            summary: { type: 'string', description: 'Optional context summary for the child agent' }
-          },
-          required: ['task']
-        }
-      });
-      definitions.push({
-        name: 'call_parallel',
-        description: 'Call multiple independent tasks in parallel. Use when subtasks do not depend on each other.',
-        parameters: {
-          type: 'object',
-          properties: {
-            tasks: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  task: { type: 'string' },
-                  summary: { type: 'string' }
-                },
-                required: ['task']
-              },
-              description: 'List of tasks to call in parallel (max 10)'
-            }
-          },
-          required: ['tasks']
-        }
-      });
-    }
-    
-    return definitions;
+    return this.toolExecutor.getToolDefinitions(depth);
   }
 
   private pruneHistory(session: Session): void {
-    if (session.history.length > this.maxHistory) {
-      session.history = session.history.slice(-this.maxHistory);
-    }
+    this.sessionManager.pruneHistory(session);
   }
 
   private async pruneAllSessions(): Promise<void> {
-    const sessions = await this.store.getAll?.() ?? {};
-    for (const session of Object.values(sessions)) {
-      this.pruneHistory(session);
-    }
-    await this.store.save?.();
+    await this.sessionManager.pruneAllSessions();
   }
 
   on<K extends keyof import('./types.js').EventMap>(
@@ -1295,7 +1287,7 @@ class ChannelBuilder {
 }
 
 // Deprecated alias
-class TransportBuilder extends ChannelBuilder {}
+class TransportBuilder extends ChannelBuilder { }
 
 class CallBuilder {
   private config: import('./types.js').CallConfig = {};

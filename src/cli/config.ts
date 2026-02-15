@@ -21,7 +21,7 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
-  dlq?: {
+  errors?: {
     type: 'file' | 'memory';
     path?: string;
     enableTools?: boolean;
@@ -52,9 +52,9 @@ const defaultConfig: CLIConfig = {
     budgetUSD: 0.75,
     timeoutMs: 600000
   },
-  dlq: {
+  errors: {
     type: 'file',
-    path: path.join(VOLTCLAW_DIR, 'dlq.json'),
+    path: path.join(VOLTCLAW_DIR, 'errors.json'),
     enableTools: false
   },
   audit: {
