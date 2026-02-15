@@ -66,8 +66,8 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
   - Exportable audit reports
 
 - [ ] **Data Protection**
-  - Encryption at rest for FileStore (AES-256-GCM)
-  - Key derivation from master identity
+  - [skipped] Encryption at rest for FileStore (AES-256-GCM)
+  - [skipped] Key derivation from master identity
   - Secure credential storage (no plaintext in config)
   - Memory-only mode for sensitive sessions
   - Automatic sensitive data detection and masking
