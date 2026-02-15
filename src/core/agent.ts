@@ -9,7 +9,8 @@ import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
-import { DeadLetterQueue, InMemoryDLQ } from './dlq.js';
+import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
+import { createDLQTools } from '../tools/dlq.js';
 import { MemoryManager } from '../memory/manager.js';
 import { createMemoryTools } from '../tools/memory.js';
 
@@ -136,8 +137,12 @@ export class VoltClawAgent {
 
     this.fallbacks = options.fallbacks ?? {};
 
-    // DLQ initialization (currently only memory supported)
-    this.dlq = new DeadLetterQueue();
+    // DLQ initialization
+    if (options.dlq?.type === 'file' && options.dlq.path) {
+      this.dlq = new DeadLetterQueue(new FileDLQ(options.dlq.path));
+    } else {
+      this.dlq = new DeadLetterQueue(new InMemoryDLQ());
+    }
 
     this.memory = new MemoryManager(this.store);
 
@@ -146,6 +151,9 @@ export class VoltClawAgent {
     if (options.tools) {
       this.registerTools(options.tools);
     }
+
+    // Register DLQ tools
+    this.registerTools(createDLQTools(this));
 
     // Register memory tools if store supports it
     if (this.store.createMemory) {
@@ -337,6 +345,11 @@ export class VoltClawAgent {
   resume(): void {
     this.state.isPaused = false;
     this.logger.info('Agent resumed');
+  }
+
+  public async retryTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+    const session = this.store.get('self', true);
+    return this.executeTool(name, args, session, this.channel.identity.publicKey);
   }
 
   async query(message: string, _options?: QueryOptions): Promise<string> {
@@ -770,7 +783,7 @@ Parent context: ${contextSummary}${mustFinish}`;
         : undefined;
 
       const result = await cb.execute(
-        () => this.retrier.execute(() => tool.execute(args)),
+        () => this.retrier.execute(async () => tool.execute(args)),
         fallback
       );
       return result as ToolCallResult;

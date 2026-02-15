@@ -10,6 +10,7 @@ import { startCommand } from './commands/start.js';
 import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
+import { dlqCommand } from './commands/dlq.js';
 import { configureCommand } from './commands/configure.js';
 import { askApproval } from './interactive.js';
 import path from 'path';
@@ -53,6 +54,7 @@ Commands:
   dm <npub> <msg>     Send a direct message
   health              Run system health checks
   session [cmd]       Manage sessions (list, show, clear, prune)
+  dlq [cmd]           Manage Dead Letter Queue (list, show, delete, clear)
   version             Show version info
   help                Show this help message
 
@@ -179,6 +181,10 @@ async function run(args: string[]): Promise<void> {
     }
     case 'session': {
       await sessionCommand(positional[1] || 'list', positional[2]);
+      break;
+    }
+    case 'dlq': {
+      await dlqCommand(positional[1] || 'list', positional[2]);
       break;
     }
     case 'keys': {

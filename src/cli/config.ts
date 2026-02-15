@@ -21,6 +21,10 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
+  dlq?: {
+    type: 'file' | 'memory';
+    path?: string;
+  };
   plugins?: string[];
 }
 
@@ -39,6 +43,10 @@ const defaultConfig: CLIConfig = {
     maxCalls: 25,
     budgetUSD: 0.75,
     timeoutMs: 600000
+  },
+  dlq: {
+    type: 'file',
+    path: path.join(VOLTCLAW_DIR, 'dlq.json')
   },
   plugins: []
 };
