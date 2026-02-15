@@ -15,6 +15,7 @@ export interface VoltClawAgentOptions {
   retry?: RetryConfig;
   fallbacks?: Record<string, string>;
   dlq?: DLQConfig;
+  audit?: { path?: string };
   permissions?: PermissionConfig;
 }
 
@@ -28,6 +29,7 @@ export interface PermissionConfig {
 export interface DLQConfig {
   type: 'memory' | 'file';
   path?: string;
+  enableTools?: boolean;
 }
 
 export interface RetryConfig {

@@ -11,6 +11,7 @@ import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
 import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
 import { createDLQTools } from '../tools/dlq.js';
+import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager } from '../memory/manager.js';
 import { createMemoryTools } from '../tools/memory.js';
 
@@ -82,6 +83,7 @@ export class VoltClawAgent {
   private readonly fallbacks: Record<string, string>;
   public readonly dlq: DeadLetterQueue;
   public readonly memory: MemoryManager;
+  private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
   private readonly hooks: {
@@ -144,6 +146,11 @@ export class VoltClawAgent {
       this.dlq = new DeadLetterQueue(new InMemoryDLQ());
     }
 
+    // Audit Log initialization
+    if (options.audit?.path) {
+        this.auditLog = new FileAuditLog(options.audit.path);
+    }
+
     this.memory = new MemoryManager(this.store);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
@@ -153,7 +160,9 @@ export class VoltClawAgent {
     }
 
     // Register DLQ tools
-    this.registerTools(createDLQTools(this));
+    if (options.dlq?.enableTools) {
+      this.registerTools(createDLQTools(this));
+    }
 
     // Register memory tools if store supports it
     if (this.store.createMemory) {
@@ -281,6 +290,8 @@ export class VoltClawAgent {
       return;
     }
 
+    await this.auditLog?.log('system', 'start', {});
+
     // Try to bootstrap if needed
     try {
         await bootstrap();
@@ -333,6 +344,7 @@ export class VoltClawAgent {
 
     this.state.isRunning = false;
     await this.hooks.onStop?.();
+    await this.auditLog?.log('system', 'stop', {});
     this.emit('stop');
     this.logger.info('VoltClaw agent stopped');
   }
@@ -527,6 +539,7 @@ export class VoltClawAgent {
       timestamp: new Date(),
       metadata: meta
     };
+    await this.auditLog?.log(from, 'message_received', { content });
     await this.hooks.onMessage?.(ctx);
     this.emit('message', ctx);
 
@@ -763,15 +776,19 @@ Parent context: ${contextSummary}${mustFinish}`;
       // Check RBAC
       const role = this.getRole(from);
       if (!this.checkPermission(tool, role)) {
+        await this.auditLog?.log(from, 'tool_denied', { tool: name, reason: 'authorization' });
         throw new AuthorizationError(`User ${from.slice(0, 8)} (role: ${role}) not authorized for tool ${name}`);
       }
 
       if (this.hooks.onToolApproval) {
           const approved = await this.hooks.onToolApproval(name, args);
           if (!approved) {
+              await this.auditLog?.log(from, 'tool_denied', { tool: name, reason: 'user_approval' });
               return { error: 'Tool execution denied by user' };
           }
       }
+
+      await this.auditLog?.log(from, 'tool_execute', { tool: name, args });
 
       const cb = this.getCircuitBreaker(name);
       const fallbackName = this.fallbacks[name];
@@ -786,6 +803,9 @@ Parent context: ${contextSummary}${mustFinish}`;
         () => this.retrier.execute(async () => tool.execute(args)),
         fallback
       );
+
+      await this.auditLog?.log(from, 'tool_result', { tool: name, result });
+
       return result as ToolCallResult;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));

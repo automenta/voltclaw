@@ -24,6 +24,10 @@ export interface CLIConfig {
   dlq?: {
     type: 'file' | 'memory';
     path?: string;
+    enableTools?: boolean;
+  };
+  audit?: {
+    path?: string;
   };
   plugins?: string[];
 }
@@ -46,7 +50,11 @@ const defaultConfig: CLIConfig = {
   },
   dlq: {
     type: 'file',
-    path: path.join(VOLTCLAW_DIR, 'dlq.json')
+    path: path.join(VOLTCLAW_DIR, 'dlq.json'),
+    enableTools: false
+  },
+  audit: {
+    path: path.join(VOLTCLAW_DIR, 'audit.jsonl')
   },
   plugins: []
 };
