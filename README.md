@@ -1,6 +1,6 @@
 # VoltClaw ⚡
 
-**VoltClaw** is an open, self-evolving autonomous agent platform for TypeScript/Node.js.
+**VoltClaw** is a recursive autonomous agent platform for TypeScript/Node.js.
 
 🌌 **One agent. Any task. Endless depth.**
 
@@ -10,21 +10,27 @@
 # Install dependencies
 pnpm install
 
-# Start the agent
-pnpm start
+# Build
+pnpm build
 
-# Or with npx
-npx voltclaw start
+# One-shot query
+pnpm start "What is 2+2?"
+
+# Interactive REPL
+pnpm start repl
+
+# Recursive analysis
+pnpm start "Analyze this codebase" --recursive
 ```
 
 ## Features
 
-- **Recursive Delegation** - Agents call themselves for complex tasks
-- **Nostr Native** - Decentralized, encrypted communication
+- **Recursive Calls** - Agents spawn sub-agents for complex tasks
+- **Nostr Native** - Decentralized, encrypted P2P communication
 - **LLM Agnostic** - Ollama, OpenAI, Anthropic, or custom providers
+- **Tool System** - File operations, HTTP requests, time utilities
 - **Zero Config** - Works out of the box with sensible defaults
-- **Plugin Ready** - Extend with tools, transports, providers
-- **Production Ready** - Health checks, metrics, graceful shutdown
+- **Self-Improving** - Can write new tools and modify its own code
 
 ## Installation
 
@@ -37,16 +43,22 @@ npm install voltclaw
 ### CLI
 
 ```bash
-# Start the agent
-voltclaw start
+# One-shot query (non-recursive)
+voltclaw "What is 2+2?"
 
-# Send a DM
+# One-shot query with recursive calls
+voltclaw "Analyze each module in src/" --recursive
+
+# Interactive REPL mode
+voltclaw repl
+
+# Send a Nostr DM
 voltclaw dm npub1... "Hello!"
 
 # Show configuration
 voltclaw config
 
-# Manage keys
+# Show identity keys
 voltclaw keys
 ```
 
@@ -54,20 +66,28 @@ voltclaw keys
 
 ```typescript
 import { VoltClawAgent } from 'voltclaw';
-import { NostrClient } from '@voltclaw/nostr';
-import { OllamaProvider } from '@voltclaw/llm';
-import { FileStore } from '@voltclaw/memory';
+import { NostrClient } from 'voltclaw/nostr';
+import { OllamaProvider } from 'voltclaw/llm';
+import { FileStore } from 'voltclaw/memory';
+import { createAllTools } from 'voltclaw/tools';
 
 const agent = new VoltClawAgent({
   llm: new OllamaProvider({ model: 'llama3.2' }),
   transport: new NostrClient({
     relays: ['wss://relay.damus.io']
   }),
-  persistence: new FileStore({ path: '~/.voltclaw/sessions.json' })
+  persistence: new FileStore({ path: '~/.voltclaw/data.json' }),
+  tools: await createAllTools(),
+  call: {
+    maxDepth: 4,
+    maxCalls: 25,
+    budgetUSD: 0.75
+  }
 });
 
 await agent.start();
 
+// Direct query (local, no transport needed)
 const reply = await agent.query('What is 2+2?');
 console.log(reply); // "4"
 
@@ -82,7 +102,7 @@ import { VoltClawAgent } from 'voltclaw';
 const agent = VoltClawAgent.builder()
   .withLLM(l => l.ollama().model('llama3.2'))
   .withTransport(t => t.nostr().relays('wss://relay.damus.io'))
-  .withDelegation(d => d.maxDepth(4).maxCalls(25).budget(0.75))
+  .withCall(c => c.maxDepth(4).maxCalls(25).budget(0.75))
   .build();
 ```
 
@@ -90,18 +110,38 @@ const agent = VoltClawAgent.builder()
 
 ```
 voltclaw/
-├── packages/
-│   ├── voltclaw/           # Core agent library
-│   ├── @voltclaw/nostr/    # Nostr transport
-│   ├── @voltclaw/llm/      # LLM providers (Ollama, OpenAI, Anthropic)
-│   ├── @voltclaw/tools/    # Built-in tools
-│   ├── @voltclaw/memory/   # Persistence layer
-│   ├── @voltclaw/cli/      # Command-line interface
-│   └── @voltclaw/testing/  # Testing utilities
-├── examples/               # Usage examples
-├── test/                   # Test suites
-└── docs/                   # Documentation
+├── src/
+│   ├── core/           # Agent logic, types, errors, bootstrap
+│   ├── llm/            # LLM providers (Ollama, OpenAI, Anthropic)
+│   ├── nostr/          # Nostr transport and client
+│   ├── tools/          # Built-in tools (files, http, time, call)
+│   ├── memory/         # Persistence (FileStore, MemoryStore)
+│   ├── testing/        # Test utilities (MockLLM, MockRelay)
+│   └── cli/            # Command-line interface
+├── test/               # Test suites
+├── examples/           # Usage examples
+└── dist/               # Compiled output
 ```
+
+## Built-in Tools
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file contents |
+| `write_file` | Write content to a file |
+| `list_files` | List files in a directory |
+| `http_get` | Make HTTP GET requests |
+| `http_post` | Make HTTP POST requests |
+| `time` | Get current time |
+| `date` | Get current date |
+| `sleep` | Pause execution |
+| `estimate_tokens` | Estimate token count |
+| `call` | Call a sub-agent for a subtask |
+| `call_parallel` | Call multiple sub-agents in parallel |
+| `grep` | Search file contents |
+| `glob` | Find files matching pattern |
+| `edit` | Edit file content |
+| `execute` | Execute shell commands |
 
 ## Development
 
@@ -109,7 +149,7 @@ voltclaw/
 # Install dependencies
 pnpm install
 
-# Build all packages
+# Build
 pnpm build
 
 # Run tests
@@ -124,55 +164,109 @@ pnpm lint
 
 ## Configuration
 
-### Environment Variables
-
-```bash
-VOLTCLAW_LLM_PROVIDER=ollama
-VOLTCLAW_LLM_MODEL=llama3.2
-VOLTCLAW_LLM_URL=http://localhost:11434
-VOLTCLAW_NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol
-VOLTCLAW_DELEGATION_MAX_DEPTH=4
-VOLTCLAW_DELEGATION_MAX_CALLS=25
-VOLTCLAW_DELEGATION_BUDGET_USD=0.75
-```
-
 ### Config File
 
 Create `~/.voltclaw/config.json`:
 
 ```json
 {
-  "relays": ["wss://relay.damus.io"],
+  "relays": ["wss://relay.damus.io", "wss://nos.lol"],
   "llm": {
     "provider": "ollama",
-    "model": "llama3.2"
+    "model": "llama3.2",
+    "baseUrl": "http://localhost:11434"
   },
-  "delegation": {
+  "call": {
     "maxDepth": 4,
     "maxCalls": 25,
-    "budgetUSD": 0.75
+    "budgetUSD": 0.75,
+    "timeoutMs": 600000
   }
 }
 ```
 
-## Recursive Delegation
+### LLM Providers
 
-VoltClaw's signature feature is recursive self-delegation. When faced with complex tasks, the agent can spawn child instances of itself:
+| Provider | Config Key | Environment Variable |
+|----------|------------|---------------------|
+| Ollama | `ollama` | `OLLAMA_BASE_URL` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
 
-```typescript
-// The agent can call itself recursively
-// Parent: "Build a landing page"
-//   └─ Child: "Research competitors"
-//   └─ Child: "Write copy"
-//   └─ Child: "Design layout"
-// Parent: Synthesizes results into final output
+## Recursive Calls
+
+VoltClaw's signature feature is recursive self-calling. When faced with complex tasks, the agent spawns child instances of itself:
+
+```
+Parent: "Analyze this codebase"
+  ├─ Child 1: "Analyze src/core/ - purpose and exports"
+  ├─ Child 2: "Analyze src/llm/ - purpose and exports"
+  ├─ Child 3: "Analyze src/nostr/ - purpose and exports"
+  └─ Child 4: "Analyze src/tools/ - purpose and exports"
+Parent: Synthesizes results into final report
 ```
 
-Guardrails keep recursion safe:
-- Maximum depth (default: 4)
-- Maximum calls (default: 25)
-- Budget tracking (default: $0.75)
-- Timeouts (default: 10 minutes)
+Each sub-agent has full access to tools and can spawn further sub-agents (up to `maxDepth`).
+
+### Guardrails
+
+- **Max Depth** (default: 4) - Limits recursion depth
+- **Max Calls** (default: 25) - Limits total calls
+- **Budget** (default: $0.75) - Tracks estimated cost
+- **Timeout** (default: 10 min) - Wall-clock limit
+
+### Example
+
+```bash
+# Analyze codebase with recursive calls
+voltclaw "Analyze this project. Call sub-agents to summarize each module (core, llm, nostr, tools, memory). Synthesize a one-sentence description." --recursive
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  VoltClawAgent                              │
+│  ┌─────────┐  ┌──────────┐  ┌───────────┐  │
+│  │   LLM   │  │ Transport│  │   Store   │  │
+│  │ Provider│  │ (Nostr)  │  │ (File)    │  │
+│  └─────────┘  └──────────┘  └───────────┘  │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │           Tool Registry              │   │
+│  │  read_file │ write_file │ call      │   │
+│  │  list_files│ http_get   │ time      │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │         Session Manager              │   │
+│  │  history │ subTasks │ depth │ cost  │   │
+│  └─────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+```
+
+## Testing
+
+```bash
+# Run all tests
+pnpm test
+
+# Run with watch mode
+pnpm test:watch
+```
+
+The testing module provides:
+- `MockLLM` - Simulates LLM responses for unit tests
+- `MockRelay` - Simulates Nostr relay for integration tests
+- `TestHarness` - Full agent testing harness
+
+## Self-Improvement
+
+VoltClaw can modify itself:
+
+1. **Write new tools** to `~/.voltclaw/tools/`
+2. **Update system prompt** at `~/.voltclaw/SYSTEM_PROMPT.md`
+3. **Modify source code** when running from source
 
 ## License
 
@@ -180,4 +274,4 @@ MIT
 
 ## Contributing
 
-Contributions welcome! Please read the contributing guidelines first.
+Contributions welcome! Open an issue or PR on GitHub.

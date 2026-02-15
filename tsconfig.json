@@ -17,16 +17,19 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "voltclaw": ["packages/voltclaw/src"],
-      "@voltclaw/nostr": ["packages/@voltclaw/nostr/src"],
-      "@voltclaw/llm": ["packages/@voltclaw/llm/src"],
-      "@voltclaw/memory": ["packages/@voltclaw/memory/src"],
-      "@voltclaw/tools": ["packages/@voltclaw/tools/src"],
-      "@voltclaw/testing": ["packages/@voltclaw/testing/src"],
-      "@voltclaw/cli": ["packages/@voltclaw/cli/src"]
+      "voltclaw": ["src/index.ts"],
+      "@voltclaw/nostr": ["src/nostr/index.ts"],
+      "@voltclaw/llm": ["src/llm/index.ts"],
+      "@voltclaw/memory": ["src/memory/index.ts"],
+      "@voltclaw/tools": ["src/tools/index.ts"],
+      "@voltclaw/testing": ["src/testing/index.ts"],
+      "@voltclaw/cli": ["src/cli/index.ts"]
     }
   },
-  "exclude": ["node_modules", "dist", "examples", "test", "test-integration.ts", "voltclaw.ts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "examples"]
 }
