@@ -2,6 +2,7 @@ import { VoltClawAgent, type LLMProvider, type MessageContext, type ReplyContext
 import { NostrClient } from '../../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
 import { FileStore } from '../../memory/index.js';
+import { SQLiteStore } from '../../memory/sqlite.js';
 import { createAllTools } from '../../tools/index.js';
 import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR, CONFIG_FILE } from '../config.js';
 import { askApproval } from '../interactive.js';
@@ -56,7 +57,17 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     relays: config.relays,
     privateKey: keys.secretKey
   });
-  const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
+
+  let store: import('../../core/types.js').Store;
+
+  if (config.persistence?.type === 'sqlite') {
+    store = new SQLiteStore({ path: config.persistence.path });
+  } else {
+    // Default or 'file'
+    const storePath = config.persistence?.path ?? path.join(VOLTCLAW_DIR, 'data.json');
+    store = new FileStore({ path: storePath });
+  }
+
   const tools = await createAllTools();
 
   let rl: readline.Interface | undefined;

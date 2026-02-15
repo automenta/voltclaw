@@ -21,6 +21,18 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
+  dlq?: {
+    type: 'file' | 'memory';
+    path?: string;
+    enableTools?: boolean;
+  };
+  audit?: {
+    path?: string;
+  };
+  persistence?: {
+    type: 'sqlite' | 'file';
+    path?: string;
+  };
   plugins?: string[];
 }
 
@@ -39,6 +51,18 @@ const defaultConfig: CLIConfig = {
     maxCalls: 25,
     budgetUSD: 0.75,
     timeoutMs: 600000
+  },
+  dlq: {
+    type: 'file',
+    path: path.join(VOLTCLAW_DIR, 'dlq.json'),
+    enableTools: false
+  },
+  audit: {
+    path: path.join(VOLTCLAW_DIR, 'audit.jsonl')
+  },
+  persistence: {
+    type: 'sqlite',
+    path: path.join(VOLTCLAW_DIR, 'voltclaw.db')
   },
   plugins: []
 };

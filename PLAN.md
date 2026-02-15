@@ -37,11 +37,11 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
   - Queue-based operation persistence for later retry
   - Priority-based operation dropping under resource pressure
 
-- [ ] **Dead Letter Queue**
+- [x] **Dead Letter Queue**
   - Built-in DLQ for failed operations
-  - Agent-accessible DLQ for self-review and retry
-  - Automatic DLQ analysis for pattern detection
-  - Manual intervention hooks for critical failures
+  - Agent-accessible DLQ for self-review and retry (Optional)
+  - [ ] Automatic DLQ analysis for pattern detection
+  - Manual intervention hooks for critical failures (CLI)
 
 ### 1.2 Security Foundation
 
@@ -58,16 +58,16 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
   - Budget-based permissions (cost limits per role)
   - Time-based access windows
 
-- [ ] **Audit & Provenance**
+- [x] **Audit & Provenance**
   - Immutable audit log using append-only data structure
   - Cryptographic chaining of audit entries
   - Tool execution provenance tracking
   - Decision trail for recursive calls
-  - Exportable audit reports
+  - Exportable audit reports (via log file)
 
 - [ ] **Data Protection**
-  - Encryption at rest for FileStore (AES-256-GCM)
-  - Key derivation from master identity
+  - [skipped] Encryption at rest for FileStore (AES-256-GCM)
+  - [skipped] Key derivation from master identity
   - Secure credential storage (no plaintext in config)
   - Memory-only mode for sensitive sessions
   - Automatic sensitive data detection and masking

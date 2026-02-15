@@ -15,6 +15,7 @@ export interface VoltClawAgentOptions {
   retry?: RetryConfig;
   fallbacks?: Record<string, string>;
   dlq?: DLQConfig;
+  audit?: { path?: string };
   permissions?: PermissionConfig;
 }
 
@@ -28,6 +29,7 @@ export interface PermissionConfig {
 export interface DLQConfig {
   type: 'memory' | 'file';
   path?: string;
+  enableTools?: boolean;
 }
 
 export interface RetryConfig {
@@ -249,6 +251,8 @@ export interface Store {
   createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
   searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
   removeMemory?(id: string): Promise<void>;
+  exportMemories?(): Promise<MemoryEntry[]>;
+  consolidateMemories?(): Promise<void>;
 }
 
 export interface MemoryEntry {

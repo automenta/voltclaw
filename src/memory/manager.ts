@@ -40,4 +40,18 @@ export class MemoryManager {
     }
     await this.store.removeMemory(id);
   }
+
+  async export(): Promise<MemoryEntry[]> {
+    if (!this.store.exportMemories) {
+        throw new Error('Store does not support memory export');
+    }
+    return this.store.exportMemories();
+  }
+
+  async consolidate(): Promise<void> {
+    if (!this.store.consolidateMemories) {
+        throw new Error('Store does not support memory consolidation');
+    }
+    await this.store.consolidateMemories();
+  }
 }
