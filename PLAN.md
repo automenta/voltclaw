@@ -75,13 +75,13 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
 ### 1.3 Core Memory System
 
 - [ ] **Persistent Memory Architecture**
-  - Session memory (current conversation)
+  - Session memory (current conversation) (Done)
   - Working memory (current task context)
   - Long-term memory (cross-session knowledge)
   - Episodic memory (past interactions and outcomes)
 
-- [ ] **Memory Storage Backends**
-  - SQLite-based persistent storage (no external DB required)
+- [x] **Memory Storage Backends**
+  - SQLite-based persistent storage (no external DB required) (Implemented)
   - Encrypted storage option
   - Memory compression for long sessions
   - Automatic memory archival

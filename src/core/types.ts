@@ -245,6 +245,27 @@ export interface Store {
   load(): Promise<void>;
   save(): Promise<void>;
   clear(): void;
+  // Optional MemoryStore interface methods
+  createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
+  searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
+}
+
+export interface MemoryEntry {
+  id: string;
+  type: 'working' | 'long_term' | 'episodic';
+  content: string;
+  tags?: string[];
+  importance?: number;
+  timestamp: number;
+  contextId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryQuery {
+  type?: MemoryEntry['type'];
+  tags?: string[];
+  content?: string; // Simple text search
+  limit?: number;
 }
 
 export interface Session {

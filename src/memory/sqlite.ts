@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session } from '../core/types.js';
+import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -31,7 +31,17 @@ export class SQLiteStore implements Store {
         key TEXT PRIMARY KEY,
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL
-      )
+      );
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT, -- JSON array
+        importance INTEGER,
+        timestamp INTEGER NOT NULL,
+        context_id TEXT,
+        metadata TEXT -- JSON object
+      );
     `);
 
     const rows = await this.db.all('SELECT key, data FROM sessions');
@@ -82,20 +92,72 @@ export class SQLiteStore implements Store {
 
   clear(): void {
     this.cache.clear();
-    // We can't synchronously clear DB, so we rely on save() to overwrite or we need async clear support in Store interface?
-    // Store.clear() is synchronous. This is a design flaw in Store interface if we want true persistence sync.
-    // But since we use load/save pattern, clear() clears cache.
-    // Next save() should delete from DB?
-    // Our save implementation only UPDATES/INSERTS. It does not DELETE removed keys.
-    // To support clear(), we should probably run DELETE FROM sessions on save() if cache is empty?
-    // Or add async clearPersistence() method?
-    // For now, let's just clear cache. If user calls save(), it won't delete from DB unless we change logic.
-    // Let's modify save to sync fully? No, too expensive.
-    // Let's hack: If cache is empty, try to clear DB on next save?
-    // Or just leave it. `clear` usually means "clear session memory".
+  }
 
-    // Actually, let's try to clear DB if we can. But we can't await here.
-    // We can fire and forget? No, unsafe.
-    // Let's just clear cache.
+  async createMemory(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string> {
+    if (!this.db) await this.load();
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const timestamp = Date.now();
+
+    await this.db!.run(
+      `INSERT INTO memories (id, type, content, tags, importance, timestamp, context_id, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      entry.type,
+      entry.content,
+      JSON.stringify(entry.tags ?? []),
+      entry.importance ?? 0,
+      timestamp,
+      entry.contextId ?? null,
+      JSON.stringify(entry.metadata ?? {})
+    );
+
+    return id;
+  }
+
+  async searchMemories(query: MemoryQuery): Promise<MemoryEntry[]> {
+    if (!this.db) await this.load();
+
+    let sql = 'SELECT * FROM memories WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (query.type) {
+      sql += ' AND type = ?';
+      params.push(query.type);
+    }
+
+    if (query.content) {
+      sql += ' AND content LIKE ?';
+      params.push(`%${query.content}%`);
+    }
+
+    // Tag search in JSON array is tricky in standard sqlite without extensions
+    // Simple naive check: LIKE '%"tag"%'
+    if (query.tags && query.tags.length > 0) {
+      for (const tag of query.tags) {
+        sql += ' AND tags LIKE ?';
+        params.push(`%${tag}%`); // Very loose matching, improved in future
+      }
+    }
+
+    sql += ' ORDER BY timestamp DESC';
+
+    if (query.limit) {
+      sql += ' LIMIT ?';
+      params.push(query.limit);
+    }
+
+    const rows = await this.db!.all(sql, params);
+    return rows.map(row => ({
+      id: row.id,
+      type: row.type as MemoryEntry['type'],
+      content: row.content,
+      tags: JSON.parse(row.tags || '[]'),
+      importance: row.importance,
+      timestamp: row.timestamp,
+      contextId: row.context_id,
+      metadata: JSON.parse(row.metadata || '{}')
+    }));
   }
 }
