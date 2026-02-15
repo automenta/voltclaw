@@ -1044,13 +1044,27 @@ Parent context: ${contextSummary}${mustFinish}`;
       toolNames.push('call');
     }
 
-    const toolNamesStr = toolNames.join(', ');
+    // Create structured tool list with clear invocation guidance
+    const toolList = toolNames.length > 0
+      ? toolNames.map(name => `  - ${name}`).join('\n')
+      : 'No tools available at this depth';
+
+    const toolSection = toolNames.length > 0
+      ? `${toolList}
+
+CRITICAL: These tools are invoked via function calling. You will receive their definitions with parameters via the API. When you need to use a tool, invoke it directly - never describe or explain how you would use it.`
+      : toolList;
 
     let template = this.systemPromptTemplate;
     if (!template) {
       // Fallback if loadSystemPrompt failed or hasn't run
       template = `You are VoltClaw (depth {depth}/{maxDepth}).
-A recursive autonomous coding agent.
+A recursive autonomous coding agent that operates by invoking tools via function calling.
+
+CORE PRINCIPLES:
+1. You MUST use function calling to invoke tools - never describe, explain, or roleplay tool usage.
+2. When you need to perform an action, invoke the appropriate tool immediately.
+3. Never say "I will use tool X" or "I would call tool Y" - just invoke it.
 
 OBJECTIVE:
 You solve complex tasks by breaking them down into smaller subtasks and calling new instances of yourself using the 'call' tool.
@@ -1062,7 +1076,7 @@ RECURSION STRATEGY:
 3. Use 'call' to spawn a sub-agent for each sub-task.
 4. Combine the results.
 
-TOOLS:
+AVAILABLE TOOLS:
 {tools}
 
 CONSTRAINTS:
@@ -1071,7 +1085,7 @@ CONSTRAINTS:
 - Current Depth: {depth}
 {depthWarning}
 
-You are persistent, efficient, and recursive.`;
+You are persistent, efficient, and recursive. You act through tools, not words.`;
     }
 
     const depthWarning = depth >= this.maxDepth - 1
@@ -1082,7 +1096,7 @@ You are persistent, efficient, and recursive.`;
       .replace('{depth}', String(depth))
       .replace('{maxDepth}', String(this.maxDepth))
       .replace('{budget}', String(this.budgetUSD))
-      .replace('{tools}', toolNamesStr)
+      .replace('{tools}', toolSection)
       .replace('{depthWarning}', depthWarning)
       + this.workspaceContext;
   }

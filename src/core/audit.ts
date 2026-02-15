@@ -97,7 +97,7 @@ export class FileAuditLog implements AuditLog {
 
           if (lines.length > 0) {
             // We found the last line!
-            const line = lines[lines.length - 1];
+            const line = lines[lines.length - 1] as string;
             try {
               const entry = JSON.parse(line) as AuditEntry;
               this.lastHash = entry.hash;
@@ -108,7 +108,13 @@ export class FileAuditLog implements AuditLog {
           }
 
           // Save the first part as potential partial line for next chunk (reading backwards)
-          lastLine = lines[0];
+          // Use the original lines array concept, but here lines is modified.
+          // Actually, if we popped everything, lines[0] is undefined.
+          // If lines is empty, it means we had only empty lines (newlines).
+          // So the 'start' of this chunk is effectively empty or a newline boundary.
+          // If we are passing 'lastLine' to the *previous* chunk (earlier in file),
+          // and this chunk started with a newline (lines[0] is empty), then the previous chunk's end + '' is fine.
+          lastLine = lines.length > 0 ? (lines[0] as string) : '';
           // Wait, this logic is tricky for backwards reading.
           // Let's simplify: read chunk, find last newline in it.
           // If found, take everything after it.

@@ -37,10 +37,10 @@ Transform VoltClaw into a self-improving recursive autonomous agent platform tha
   - Queue-based operation persistence for later retry
   - Priority-based operation dropping under resource pressure
 
-- [x] **Dead Letter Queue**
-  - Built-in DLQ for failed operations
-  - Agent-accessible DLQ for self-review and retry (Optional)
-  - [ ] Automatic DLQ analysis for pattern detection
+- [x] **Error Queue**
+  - Built-in Error Queue for failed operations
+  - Agent-accessible Error Queue for self-review and retry (Optional)
+  - [ ] Automatic Error Queue analysis for pattern detection
   - Manual intervention hooks for critical failures (CLI)
 
 ### 1.2 Security Foundation

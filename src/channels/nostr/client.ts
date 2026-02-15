@@ -60,7 +60,7 @@ export function resolveToHex(key: string): string {
 export class NostrClient implements Channel {
   readonly type = 'nostr';
   readonly identity: { publicKey: string };
-  
+
   private pool: RelayPool;
   private secretKey: Uint8Array;
   private seenEvents: Set<string> = new Set();
@@ -73,13 +73,15 @@ export class NostrClient implements Channel {
     } else {
       this.secretKey = generateSecretKey();
     }
-    
+
     this.identity = {
       publicKey: getPublicKey(this.secretKey)
     };
-    
-    this.pool = new RelayPool();
-    
+
+    // Initialize with logging disabled to prevent noisy shutdown errors
+    // @ts-ignore - types might not be perfectly aligned with the vendored version
+    this.pool = new RelayPool(undefined, { logErrorsAndNotices: false });
+
     for (const relay of options.relays) {
       this.pool.addOrGetRelay(relay);
     }
@@ -93,18 +95,19 @@ export class NostrClient implements Channel {
 
   async stop(): Promise<void> {
     if (!this.isStarted) return;
-    
-    for (const relay of this.pool.relayByUrl.keys()) {
-      this.pool.removeRelay(relay);
-    }
-    
+
+    // Use close() to ensure the internal errorsAndNoticesInterval is cleared
+    // and all sockets are properly closed.
+    // @ts-ignore - close() exists on the instance but might be missing from types
+    await (this.pool as any).close();
+
     this.isStarted = false;
     this.emit('disconnected');
   }
 
   async send(to: string, content: string): Promise<void> {
     const encrypted = await nip04.encrypt(this.secretKey, to, content);
-    
+
     const event = finalizeEvent(
       {
         kind: 4,
@@ -139,14 +142,14 @@ export class NostrClient implements Channel {
             ev.pubkey,
             ev.content
           );
-          
+
           const meta: MessageMeta = {
             eventId: ev.id,
             timestamp: ev.created_at,
             kind: ev.kind,
             tags: ev.tags
           };
-          
+
           await handler(ev.pubkey, decrypted, meta);
         } catch (error) {
           this.emit('error', error);
@@ -162,30 +165,30 @@ export class NostrClient implements Channel {
   async query(filter: QueryFilter): Promise<ChannelMessage[]> {
     return new Promise((resolve) => {
       const events: ChannelMessage[] = [];
-      
+
       const nostrFilter: Record<string, unknown> = {
         kinds: filter.kinds ?? [4],
         '#p': [this.identity.publicKey]
       };
-      
+
       if (filter.since !== undefined) nostrFilter['since'] = filter.since;
       if (filter.until !== undefined) nostrFilter['until'] = filter.until;
       if (filter.limit !== undefined) nostrFilter['limit'] = filter.limit;
-      
+
       const unsub = this.pool.subscribe(
         [nostrFilter],
         Array.from(this.pool.relayByUrl.keys()),
         async (event: unknown) => {
           const ev = event as NostrEvent;
           if (!validateEvent(ev) || !verifyEvent(ev)) return;
-          
+
           try {
             const decrypted = await nip04.decrypt(
               this.secretKey,
               ev.pubkey,
               ev.content
             );
-            
+
             events.push({
               id: ev.id,
               from: ev.pubkey,
@@ -202,7 +205,7 @@ export class NostrClient implements Channel {
         undefined,
         { unsubscribeOnEose: true }
       );
-      
+
       setTimeout(() => {
         unsub();
         resolve(events);
@@ -235,7 +238,7 @@ export async function generateNewKeyPair(): Promise<{
 }> {
   const sk = generateSecretKey();
   const pk = getPublicKey(sk);
-  
+
   return {
     publicKey: pk,
     secretKey: Buffer.from(sk).toString('hex'),
@@ -245,8 +248,8 @@ export async function generateNewKeyPair(): Promise<{
 }
 
 export function getPublicKeyFromSecret(secretKey: string): string {
-    const key = decodePrivateKey(secretKey);
-    return getPublicKey(key);
+  const key = decodePrivateKey(secretKey);
+  return getPublicKey(key);
 }
 
 export { nip19 };

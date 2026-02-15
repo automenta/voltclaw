@@ -44,7 +44,8 @@ const defaultConfig: CLIConfig = {
   ],
   llm: {
     provider: 'ollama',
-    model: 'llama3.2'
+    model: 'llama3.2',
+    baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
   },
   call: {
     maxDepth: 4,
