@@ -3,7 +3,10 @@ import type { Tool, ToolCallResult, ToolDefinition, ToolParameters } from './typ
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters };
 
 export type ToolExecutor = (
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  agent?: any,
+  session?: any,
+  from?: string
 ) => Promise<ToolCallResult> | ToolCallResult;
 
 interface RegisteredTool {

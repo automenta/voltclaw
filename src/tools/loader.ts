@@ -9,6 +9,7 @@ import { estimateTokensTool } from './call.js';
 import { httpGetTool, httpPostTool } from './http.js';
 import { readFileTool, writeFileTool, listFilesTool } from './files.js';
 import { restartTool } from './restart.js';
+import { codeExecTool } from './code_exec.js';
 
 async function loadUserTools(): Promise<Tool[]> {
   const tools: Tool[] = [];
@@ -47,7 +48,8 @@ export function createBuiltinTools(): Tool[] {
     readFileTool,
     writeFileTool,
     listFilesTool,
-    restartTool
+    restartTool,
+    codeExecTool
   ];
 }
 

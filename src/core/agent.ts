@@ -753,7 +753,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     return response.content;
   }
 
-  private async executeTool(
+  public async executeTool(
     name: string,
     args: Record<string, unknown>,
     session: Session,
@@ -800,7 +800,7 @@ Parent context: ${contextSummary}${mustFinish}`;
         : undefined;
 
       const result = await cb.execute(
-        () => this.retrier.execute(async () => tool.execute(args)),
+        () => this.retrier.execute(async () => tool.execute(args, this, session, from)),
         fallback
       );
 
