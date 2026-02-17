@@ -65,7 +65,9 @@ export const codeExecTool: Tool = {
     }
 
     try {
-      const result = vm.runInContext(code, replContexts.get(sessionId)!);
+      const result = vm.runInContext(code, replContexts.get(sessionId)!, {
+        timeout: 30000 // 30s timeout to prevent infinite loops
+      });
 
       let output = result;
       if (result && typeof result.then === 'function') {

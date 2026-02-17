@@ -82,6 +82,12 @@
     "vitest": "^3.0.0"
   },
   "packageManager": "pnpm@10.0.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sqlite3",
+      "esbuild"
+    ]
+  },
   "engines": {
     "node": ">=22.0.0"
   },
