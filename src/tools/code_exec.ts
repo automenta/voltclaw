@@ -41,6 +41,20 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
             read: (path: string) => execTool('read_file', { filepath: path }),
             write: (path: string, content: string) => execTool('write_file', { filepath: path, content }),
             list: (path: string = '.') => execTool('list_files', { path }),
+            stream: async function* (path: string, options: { bufferSize?: number } = {}) {
+                // Primitive streaming simulation using read_file (since agent doesn't expose native streams yet)
+                const result = await execTool('read_file', { filepath: path });
+                if (result.error) throw new Error(result.error);
+
+                const content = result.content as string;
+                const bufferSize = options.bufferSize ?? 1024;
+                let offset = 0;
+
+                while (offset < content.length) {
+                    yield content.slice(offset, offset + bufferSize);
+                    offset += bufferSize;
+                }
+            }
         };
         const http = {
             get: (url: string) => execTool('http_get', { url }),
@@ -49,6 +63,35 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         const memory = {
             store: (content: string, type: string) => execTool('memory_store', { content, type }),
             recall: (query: string) => execTool('memory_recall', { query }),
+        };
+        const llm = {
+            chat: async (prompt: string, system?: string) => {
+                // Direct access to LLM via agent methods if available, otherwise via tool or fallback
+                // VoltClawAgent doesn't expose a 'chat' tool directly, but we can access `agent.query` if we cast `agent`.
+                // However, `agent` passed here IS the VoltClawAgent instance usually.
+                // But `execute` signature says `agent: any`.
+                if (agent && typeof agent.query === 'function') {
+                    // This creates a new top-level query or sub-context?
+                    // Ideally we want a lightweight chat without full agent loop overhead if possible,
+                    // but agent.query is the standard way.
+                    // Or we can use `agent.llm.chat` directly?
+                    // Accessing `agent.llm` requires `agent` to be `VoltClawAgent`.
+                    if (agent.llm && typeof agent.llm.chat === 'function') {
+                        const messages = [];
+                        if (system) messages.push({ role: 'system', content: system });
+                        messages.push({ role: 'user', content: prompt });
+                        const res = await agent.llm.chat(messages);
+                        return res.content;
+                    }
+                }
+                throw new Error('LLM access not available');
+            },
+            embed: async (text: string) => {
+                if (agent && agent.llm && typeof agent.llm.embed === 'function') {
+                    return await agent.llm.embed(text);
+                }
+                throw new Error('Embedding not available');
+            }
         };
 
         // Create a context object with all the functionality
@@ -62,13 +105,15 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
           fs,
           http,
           memory,
+          llm,
 
           // VoltClaw Namespace (Legacy/Scoped)
           voltclaw: {
               agent, // Power user access
               fs,
               http,
-              memory
+              memory,
+              llm
           },
 
           // Basic console
