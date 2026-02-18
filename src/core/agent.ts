@@ -114,6 +114,7 @@ export class VoltClawAgent {
   private readonly maxCalls: number;
   private readonly budgetUSD: number;
   private readonly timeoutMs: number;
+  private readonly largeResultThreshold: number;
   private readonly maxHistory: number;
   private readonly autoPruneInterval: number;
   private readonly eventHandlers: Map<string, Set<(...args: unknown[]) => void>> = new Map();
@@ -135,6 +136,7 @@ export class VoltClawAgent {
     this.maxCalls = options.call?.maxCalls ?? DEFAULT_MAX_CALLS;
     this.budgetUSD = options.call?.budgetUSD ?? DEFAULT_BUDGET_USD;
     this.timeoutMs = options.call?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.largeResultThreshold = options.call?.largeResultThreshold ?? 5000;
     this.maxHistory = options.history?.maxMessages ?? DEFAULT_MAX_HISTORY;
     this.autoPruneInterval = options.history?.autoPruneInterval ?? DEFAULT_PRUNE_INTERVAL;
 
@@ -186,7 +188,12 @@ export class VoltClawAgent {
       // We'll trust user passed tools with config if they used createAllTools(config).
       // However, we can register/overwrite code_exec if explicit config is provided in options.
       if (options.rlm) {
-          this.registerTools([createCodeExecTool(options.rlm)]);
+          // Inherit agent timeout if not specified in RLM config
+          const rlmConfig = {
+              rlmTimeoutMs: options.rlm.rlmTimeoutMs ?? options.call?.timeoutMs,
+              ...options.rlm
+          };
+          this.registerTools([createCodeExecTool(rlmConfig)]);
       }
     }
 
@@ -787,7 +794,24 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
         })));
       }
       
-      const result = response.content || '[no content]';
+      let result = response.content || '[no content]';
+
+      // Transparently offload large results to memory
+      if (result.length > this.largeResultThreshold && this.memory) {
+          try {
+            const memId = await this.memory.storeMemory(
+                result,
+                'working',
+                ['rlm_result', `subtask:${subId}`],
+                5 // Medium importance
+            );
+            result = `[RLM_REF:${memId}]`;
+          } catch (e) {
+            // Fallback to sending raw result if memory store fails
+            this.logger.error('Failed to offload large RLM result', { error: String(e) });
+          }
+      }
+
       await this.channel.send(
         this.channel.identity.publicKey,
         JSON.stringify({ type: 'subtask_result', subId, result, parentPubkey })
@@ -1442,6 +1466,11 @@ class CallBuilder {
 
   timeout(ms: number): this {
     this.config.timeoutMs = ms;
+    return this;
+  }
+
+  largeResultThreshold(chars: number): this {
+    this.config.largeResultThreshold = chars;
     return this;
   }
 

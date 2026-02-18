@@ -123,6 +123,22 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
           }
         };
 
+        // Helper to load context by ID easily
+        ctxObj.load_context = async (id: string) => {
+             if (agent.memory) {
+                 const entries = await agent.memory.recall({ id });
+                 if (entries && entries.length > 0) {
+                     entries.sort((a, b) => {
+                         const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+                         const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+                         return idxA - idxB;
+                     });
+                     return entries.map(e => e.content).join('');
+                 }
+             }
+             return null;
+        };
+
         // Define rlm_call separately to capture 'ctxObj' (which becomes 'ctx')
         ctxObj.rlm_call = async (subtask: string, keys: string[] = contextKeys) => {
             let summary = '';
@@ -168,11 +184,31 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
               const result: any = await Promise.race([callPromise, timeoutPromise]);
               clearTimeout(timeoutId!);
 
-              if (result && typeof result.result === 'string') {
+              let output = result?.result; // result from ToolCallResult
+
+              // Transparently resolve RLM Reference
+              if (typeof output === 'string' && output.startsWith('[RLM_REF:') && agent.memory) {
+                   const refId = output.slice(9, -1);
+                   try {
+                       const entries = await agent.memory.recall({ id: refId });
+                       if (entries && entries.length > 0) {
+                           entries.sort((a, b) => {
+                               const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+                               const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+                               return idxA - idxB;
+                           });
+                           output = entries.map(e => e.content).join('');
+                       }
+                   } catch (e) {
+                       // ignore
+                   }
+              }
+
+              if (typeof output === 'string') {
                   try {
-                     return JSON.parse(result.result);
+                     return JSON.parse(output);
                   } catch {
-                     return result.result;
+                     return output;
                   }
               }
               return result;

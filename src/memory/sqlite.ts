@@ -183,6 +183,11 @@ export class SQLiteStore implements Store {
     let sql = 'SELECT * FROM memories WHERE 1=1';
     const params: unknown[] = [];
 
+    if (query.id) {
+      sql += ' AND (id = ? OR context_id = ?)';
+      params.push(query.id, query.id);
+    }
+
     if (query.type) {
       sql += ' AND type = ?';
       params.push(query.type);

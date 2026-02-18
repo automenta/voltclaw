@@ -82,6 +82,7 @@ export interface CallConfig {
   maxCalls?: number;
   budgetUSD?: number;
   timeoutMs?: number;
+  largeResultThreshold?: number;
 }
 
 export interface HistoryConfig {
@@ -336,6 +337,7 @@ export interface MemoryEntry {
 }
 
 export interface MemoryQuery {
+  id?: string;
   type?: MemoryEntry['type'];
   level?: number;
   tags?: string[];
