@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { codeExecTool } from '../../src/tools/code_exec.js';
+import { createCodeExecTool } from '../../src/tools/code_exec.js';
 
 describe('code_exec tool', () => {
+  const codeExecTool = createCodeExecTool();
+
   it('should execute javascript code', async () => {
     const args = { code: '1 + 1' };
     const agent = {
@@ -85,14 +87,28 @@ describe('code_exec tool', () => {
     });
   });
 
-  it('should support voltclaw.fs namespace', async () => {
+  it('should support global namespaces (fs, http, memory)', async () => {
     const agent = {
       executeTool: vi.fn().mockResolvedValue({ status: 'success' }),
     };
     const session = {};
     const sessionId = 'fs-session';
 
-    // Use IIFE async for await
+    await codeExecTool.execute({
+      code: `(async () => await fs.read('test.txt'))()`,
+      sessionId
+    }, agent, session);
+
+    expect(agent.executeTool).toHaveBeenCalledWith('read_file', { filepath: 'test.txt' }, session, 'unknown');
+  });
+
+  it('should support legacy voltclaw.fs namespace', async () => {
+    const agent = {
+      executeTool: vi.fn().mockResolvedValue({ status: 'success' }),
+    };
+    const session = {};
+    const sessionId = 'legacy-session';
+
     await codeExecTool.execute({
       code: `(async () => await voltclaw.fs.read('test.txt'))()`,
       sessionId
@@ -100,17 +116,4 @@ describe('code_exec tool', () => {
 
     expect(agent.executeTool).toHaveBeenCalledWith('read_file', { filepath: 'test.txt' }, session, 'unknown');
   });
-
-  // Since we can't easily advance fake timers for promises inside vm (vm context uses separate global potentially)
-  // or because of how vitest handles fake timers across async boundaries, we might mock setTimeout or skip real time.
-  // Actually, vm context uses its own setTimeout if not proxied? No, it usually uses host's if not sandboxed fully.
-  // But let's try just mocking the implementation of rlm_call via agent spy? No, logic is inside tool.
-
-  // We'll skip fake timers and rely on mocking the promise race behavior by making executeTool return a promise that never resolves
-  // but we can't wait 60s in test.
-  // We can override the timeout constant in test? No it's const.
-  // We can just trust the logic for now or mock the module constant if possible (hard in esm).
-  // Alternatively, just verify the namespace and logic structure exists.
-
-  // Let's rely on unit testing the namespace existence.
 });

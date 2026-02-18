@@ -18,6 +18,7 @@ import { createGraphTools } from '../tools/graph.js';
 import { createSelfTestTool } from '../tools/self-test.js';
 import { createDocumentationTools } from '../tools/documentation.js';
 import { createPromptTools } from '../tools/prompt.js';
+import { createCodeExecTool } from '../tools/code_exec.js';
 import { ContextManager } from './context-manager.js';
 import { SelfTestFramework } from './self-test.js';
 import { DocumentationManager } from './documentation.js';
@@ -178,6 +179,15 @@ export class VoltClawAgent {
 
     if (options.tools) {
       this.registerTools(options.tools);
+    } else {
+      // If no tools provided, at least register code_exec if configured?
+      // No, caller usually provides createAllTools().
+      // But if user wants to override code_exec config while passing default tools, it's tricky.
+      // We'll trust user passed tools with config if they used createAllTools(config).
+      // However, we can register/overwrite code_exec if explicit config is provided in options.
+      if (options.rlm) {
+          this.registerTools([createCodeExecTool(options.rlm)]);
+      }
     }
 
     // Register self-test tool
