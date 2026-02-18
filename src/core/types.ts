@@ -102,6 +102,7 @@ export interface HooksConfig {
   onReply?: (ctx: ReplyContext) => Promise<void>;
   onCall?: (ctx: CallContext) => Promise<void>;
   onError?: (ctx: ErrorContext) => Promise<void>;
+  onLog?: (ctx: LogContext) => Promise<void>;
   onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
   onStart?: () => Promise<void>;
   onStop?: () => Promise<void>;
@@ -139,6 +140,14 @@ export interface ErrorContext {
   timestamp: Date;
 }
 
+export interface LogContext {
+  subId: string;
+  taskId?: string;
+  message: string;
+  level: 'info' | 'error';
+  timestamp: Date;
+}
+
 export type Middleware = (
   ctx: MiddlewareContext,
   next: () => Promise<void>
@@ -171,6 +180,7 @@ export type EventMap = {
   reply: [ReplyContext];
   call: [CallContext];
   error: [ErrorContext];
+  log: [LogContext];
   start: [];
   stop: [];
 };

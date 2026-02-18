@@ -358,6 +358,91 @@ async function runDemo() {
     console.log("Result 4:", result4);
     await agent4.stop();
 
+    // --- Test 5: Atomic Ops & Logging ---
+    console.log("\n--- Test 5: Atomic Ops & Logging ---");
+
+    const llm5 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+             const last = messages[messages.length - 1];
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (last.role === 'user') {
+                     return {
+                         content: "Simulating progress...",
+                         toolCalls: [{
+                             id: 'call_atomic',
+                             name: 'code_exec',
+                             arguments: {
+                                 code: `
+                                    (async () => {
+                                        console.log("Starting atomic test");
+                                        await rlm_shared_increment('global_counter', 5);
+                                        await rlm_shared_push('global_log', 'Item 1');
+                                        console.log("Mid-way progress");
+                                        await rlm_shared_push('global_log', 'Item 2');
+                                        console.log("Finished atomic test");
+                                        return "Done";
+                                    })()
+                                 `,
+                                 sessionId: 'atomic-session'
+                             }
+                         }]
+                     };
+                 }
+                 return { content: "Sub-task completed." };
+             }
+
+             // Root Agent Logic
+             if (last.role === 'user' && last.content?.includes('Atomic')) {
+                 return {
+                     content: "Starting atomic operations test...",
+                     toolCalls: [{
+                         id: 'call_atomic_root',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    await rlm_shared_set('global_counter', 0);
+                                    await rlm_shared_set('global_log', []);
+                                    await rlm_call('Run atomic updates');
+                                    const count = await rlm_shared_get('global_counter');
+                                    const log = await rlm_shared_get('global_log');
+                                    return { count, log };
+                                })()
+                             `,
+                             sessionId: 'root-atomic'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool') {
+                 return { content: `Final Result: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 5" };
+        }
+    });
+
+    const agent5 = new VoltClawAgent({
+        llm: llm5,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools,
+        hooks: {
+            onLog: async (ctx) => {
+                console.log(`[STREAM LOG] ${ctx.level.toUpperCase()} from ${ctx.subId.slice(-8)}: ${ctx.message}`);
+            }
+        }
+    });
+
+    await agent5.start();
+    const result5 = await agent5.query("Test Atomic Ops.");
+    console.log("Result 5:", result5);
+    await agent5.stop();
+
     if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
     console.log("Demo complete.");
 }

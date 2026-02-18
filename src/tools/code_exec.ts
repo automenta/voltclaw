@@ -122,14 +122,39 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
           console: {
               log: (...args: any[]) => {
                   const ctx = replContexts.get(internalSessionId);
+                  const msg = args.map(String).join(' ');
                   if (ctx && (ctx as any).__log_collector) {
-                      (ctx as any).__log_collector.push(args.map(String).join(' '));
+                      (ctx as any).__log_collector.push(msg);
+                  }
+
+                  // Stream log if agent channel is available
+                  if (agent && agent.channel) {
+                      const payload = JSON.stringify({
+                          type: 'subtask_log',
+                          subId: session.id,
+                          taskId: session.id,
+                          message: msg,
+                          level: 'info'
+                      });
+                      agent.channel.send(agent.channel.identity.publicKey, payload).catch(() => {});
                   }
               },
               error: (...args: any[]) => {
                   const ctx = replContexts.get(internalSessionId);
+                  const msg = '[ERROR] ' + args.map(String).join(' ');
                   if (ctx && (ctx as any).__log_collector) {
-                      (ctx as any).__log_collector.push('[ERROR] ' + args.map(String).join(' '));
+                      (ctx as any).__log_collector.push(msg);
+                  }
+
+                  if (agent && agent.channel) {
+                      const payload = JSON.stringify({
+                          type: 'subtask_log',
+                          subId: session.id,
+                          taskId: session.id,
+                          message: msg,
+                          level: 'error'
+                      });
+                      agent.channel.send(agent.channel.identity.publicKey, payload).catch(() => {});
                   }
               }
           }
@@ -158,6 +183,41 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
              const rootSession = store.get(rootId);
              return rootSession.sharedData?.[key];
+        };
+
+        ctxObj.rlm_shared_increment = async (key: string, delta: number = 1) => {
+             const rootId = session.rootId || session.id;
+             if (!rootId) throw new Error('Root ID not found');
+             const store = (agent as any).store;
+             if (!store) throw new Error('Store not available');
+
+             const rootSession = store.get(rootId);
+             if (!rootSession.sharedData) rootSession.sharedData = {};
+
+             const current = Number(rootSession.sharedData[key] || 0);
+             const newVal = current + delta;
+             rootSession.sharedData[key] = newVal;
+
+             if (store.save) await store.save();
+             return newVal;
+        };
+
+        ctxObj.rlm_shared_push = async (key: string, value: any) => {
+             const rootId = session.rootId || session.id;
+             if (!rootId) throw new Error('Root ID not found');
+             const store = (agent as any).store;
+             if (!store) throw new Error('Store not available');
+
+             const rootSession = store.get(rootId);
+             if (!rootSession.sharedData) rootSession.sharedData = {};
+
+             if (!Array.isArray(rootSession.sharedData[key])) {
+                 rootSession.sharedData[key] = [];
+             }
+             rootSession.sharedData[key].push(value);
+
+             if (store.save) await store.save();
+             return rootSession.sharedData[key].length;
         };
 
         // RLM Global: Trace

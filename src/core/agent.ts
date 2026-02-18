@@ -36,6 +36,7 @@ import type {
   ReplyContext,
   CallContext,
   ErrorContext,
+  LogContext,
   QueryOptions,
   Unsubscribe,
   Session,
@@ -105,6 +106,7 @@ export class VoltClawAgent {
     onReply?: (ctx: ReplyContext) => Promise<void>;
     onCall?: (ctx: CallContext) => Promise<void>;
     onError?: (ctx: ErrorContext) => Promise<void>;
+    onLog?: (ctx: LogContext) => Promise<void>;
     onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
     onStart?: () => Promise<void>;
     onStop?: () => Promise<void>;
@@ -642,6 +644,16 @@ export class VoltClawAgent {
             // We can't rely on pubkey for internal sessions (subtask:...).
         }
         await this.handleSubtaskResult(targetSession, parsed, from);
+      } else if (parsed?.type === 'subtask_log') {
+        const logCtx: LogContext = {
+          subId: parsed.subId as string,
+          taskId: parsed.taskId as string,
+          message: parsed.message as string,
+          level: (parsed.level as 'info' | 'error') ?? 'info',
+          timestamp: new Date()
+        };
+        await this.hooks.onLog?.(logCtx);
+        this.emit('log', logCtx);
       } else {
         await this.handleTopLevel(session, content, from);
       }
