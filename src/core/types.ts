@@ -298,7 +298,7 @@ export interface Tool {
   name: string;
   description: string;
   parameters?: ToolParameters;
-  execute: (args: Record<string, unknown>) => Promise<ToolCallResult> | ToolCallResult;
+  execute: (args: Record<string, unknown>, agent?: any, session?: any, from?: string) => Promise<ToolCallResult> | ToolCallResult;
   maxDepth?: number;
   costMultiplier?: number;
   requiredRoles?: Role[];

@@ -97,7 +97,7 @@ export class FileAuditLog implements AuditLog {
 
           if (lines.length > 0) {
             // We found the last line!
-            const line = lines[lines.length - 1];
+            const line = lines[lines.length - 1]!;
             try {
                 const entry = JSON.parse(line) as AuditEntry;
                 this.lastHash = entry.hash;
@@ -108,7 +108,7 @@ export class FileAuditLog implements AuditLog {
           }
 
           // Save the first part as potential partial line for next chunk (reading backwards)
-          lastLine = lines[0];
+          lastLine = lines[0] ?? '';
           // Wait, this logic is tricky for backwards reading.
           // Let's simplify: read chunk, find last newline in it.
           // If found, take everything after it.
