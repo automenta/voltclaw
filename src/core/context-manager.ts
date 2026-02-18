@@ -1,22 +1,31 @@
 import type { LLMProvider, ChatMessage } from './types.js';
+import type { MemoryManager } from '../memory/manager.js';
+import type { GraphManager } from '../memory/graph.js';
 
 export interface ContextManagerOptions {
   maxMessages?: number;
   preserveLast?: number;
+  memory?: MemoryManager;
+  graph?: GraphManager;
 }
 
 export class ContextManager {
   private readonly llm: LLMProvider;
   private readonly maxMessages: number;
   private readonly preserveLast: number;
+  private readonly memory?: MemoryManager;
+  private readonly graph?: GraphManager;
 
   constructor(llm: LLMProvider, options: ContextManagerOptions = {}) {
     this.llm = llm;
     this.maxMessages = options.maxMessages ?? 50;
     this.preserveLast = options.preserveLast ?? 20;
+    this.memory = options.memory;
+    this.graph = options.graph;
   }
 
   async manageContext(messages: ChatMessage[]): Promise<ChatMessage[]> {
+    console.log(`manageContext: total=${messages.length}, max=${this.maxMessages}`);
     if (messages.length <= this.maxMessages) {
       return messages;
     }
@@ -41,6 +50,19 @@ export class ContextManager {
 
     if (toSummarize.length === 0) {
       return messages;
+    }
+
+    // Offload to long-term memory/graph before summarizing
+    const textToOffload = toSummarize
+      .map(m => `${m.role.toUpperCase()}: ${m.content || '[tool call]'}`)
+      .join('\n');
+
+    if (this.graph) {
+        // We do this optimistically without awaiting to block execution minimally
+        console.log('Offloading to graph:', textToOffload.slice(0, 50));
+        this.graph.extractAndStore(textToOffload).catch(e => console.error('Graph offload failed:', e));
+    } else if (this.memory) {
+        this.memory.storeMemory(textToOffload, 'episodic', ['conversation_history'], 3).catch(e => console.error('Memory offload failed:', e));
     }
 
     const summary = await this.summarize(toSummarize);

@@ -170,8 +170,10 @@ export class VoltClawAgent {
     this.memory = new MemoryManager(this.store, this.llm);
     this.graph = new GraphManager(this.store, this.llm);
     this.contextManager = new ContextManager(this.llm, {
-      maxMessages: this.maxHistory,
-      preserveLast: 20
+      maxMessages: options.history?.contextWindowSize ?? this.maxHistory,
+      preserveLast: options.history?.preserveLast ?? 20,
+      memory: this.memory,
+      graph: this.graph
     });
     this.selfTest = new SelfTestFramework(this);
     this.docs = new DocumentationManager(this);

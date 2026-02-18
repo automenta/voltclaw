@@ -88,6 +88,8 @@ export interface CallConfig {
 export interface HistoryConfig {
   maxMessages?: number;
   autoPruneInterval?: number;
+  preserveLast?: number;
+  contextWindowSize?: number;
 }
 
 export interface ToolsConfig {
