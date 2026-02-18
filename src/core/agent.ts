@@ -1158,6 +1158,19 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
     
     const toolNamesStr = toolNames.join(', ');
 
+    // Inject RLM Environment Guide if code_exec is available
+    let rlmGuide = '';
+    if (toolNames.includes('code_exec')) {
+        rlmGuide = `
+RLM ENVIRONMENT:
+- You have a persistent JavaScript sandbox via 'code_exec'.
+- Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
+- Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
+- Use 'load_context(id)' to retrieve specific memories by ID.
+- Console logs (console.log) are captured and returned to you for debugging.
+`;
+    }
+
     let template = this.systemPromptTemplate;
     if (!template) {
         // Fallback if loadSystemPrompt failed or hasn't run
@@ -1176,7 +1189,7 @@ RECURSION STRATEGY:
 
 TOOLS:
 {tools}
-
+{rlmGuide}
 CONSTRAINTS:
 - Budget: {budget}
 - Max Depth: {maxDepth}
@@ -1184,6 +1197,9 @@ CONSTRAINTS:
 {depthWarning}
 
 You are persistent, efficient, and recursive.`;
+    } else if (!template.includes('{rlmGuide}')) {
+        // Append guide if placeholder is missing in custom template
+        template += '\n{rlmGuide}';
     }
 
     const depthWarning = depth >= this.maxDepth - 1
@@ -1195,6 +1211,7 @@ You are persistent, efficient, and recursive.`;
         .replace('{maxDepth}', String(this.maxDepth))
         .replace('{budget}', String(this.budgetUSD))
         .replace('{tools}', toolNamesStr)
+        .replace('{rlmGuide}', rlmGuide)
         .replace('{depthWarning}', depthWarning)
         + this.workspaceContext;
   }

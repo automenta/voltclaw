@@ -14,7 +14,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
   return {
     name: 'code_exec',
-    description: 'Execute JavaScript in a persistent RLM sandbox. Use rlm_call() for recursion. Context survives across calls.',
+    description: 'Execute JavaScript in a persistent RLM sandbox. Globals: rlm_call(task), rlm_call_parallel(tasks), load_context(id). Context survives across calls.',
     parameters: {
       type: 'object',
       properties: {
@@ -118,8 +118,18 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
           // Basic console
           console: {
-              log: (...args: any[]) => { /* suppressed */ },
-              error: (...args: any[]) => { /* suppressed */ }
+              log: (...args: any[]) => {
+                  const ctx = replContexts.get(sessionId);
+                  if (ctx && (ctx as any).__log_collector) {
+                      (ctx as any).__log_collector.push(args.map(String).join(' '));
+                  }
+              },
+              error: (...args: any[]) => {
+                  const ctx = replContexts.get(sessionId);
+                  if (ctx && (ctx as any).__log_collector) {
+                      (ctx as any).__log_collector.push('[ERROR] ' + args.map(String).join(' '));
+                  }
+              }
           }
         };
 
@@ -258,8 +268,12 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         replContexts.set(sessionId, ctx);
       }
 
+      const logs: string[] = [];
+      const ctx = replContexts.get(sessionId)!;
+      (ctx as any).__log_collector = logs;
+
       try {
-        const result = vm.runInContext(code, replContexts.get(sessionId)!, {
+        const result = vm.runInContext(code, ctx, {
           timeout: 30000 // 30s timeout for sync code execution
         });
 
@@ -270,11 +284,15 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
         return {
           output: output,
+          logs: logs.length > 0 ? logs : undefined,
           sessionId,
-          contextSize: Object.keys(replContexts.get(sessionId)!).length
+          contextSize: Object.keys(ctx).length
         };
       } catch (e) {
-        return { error: (e as Error).message };
+        return {
+          error: (e as Error).message,
+          logs: logs.length > 0 ? logs : undefined
+        };
       }
     }
   };
