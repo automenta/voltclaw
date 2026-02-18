@@ -459,6 +459,74 @@ async function runDemo() {
     console.log("Result 5:", result5);
     await agent5.stop();
 
+    // --- Test 6: Functional RLM (Map/Reduce) ---
+    console.log("\n--- Test 6: Functional RLM (Map/Reduce) ---");
+
+    const llm6 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic (Square Number)
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (systemMsg.includes('Task: Square this:')) {
+                     const num = parseInt(systemMsg.match(/Square this: (\d+)/)[1]);
+                     return { content: String(num * num) };
+                 }
+                 if (systemMsg.includes('Task: Sum these:')) {
+                     // Reduce step
+                     const match = systemMsg.match(/Sum these: (\d+) and (\d+)/);
+                     const a = parseInt(match[1]);
+                     const b = parseInt(match[2]);
+                     return { content: String(a + b) };
+                 }
+             }
+
+             // Root Agent Logic
+             if (messages[messages.length - 1].role === 'user') {
+                 return {
+                     content: "Running MapReduce...",
+                     toolCalls: [{
+                         id: 'call_mapreduce',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const items = [1, 2, 3];
+
+                                    // Map: Square
+                                    const squares = await rlm_map(items, item => "Square this: " + item);
+                                    const values = squares.map(r => parseInt(r.result));
+
+                                    // Reduce: Sum
+                                    const sum = await rlm_reduce(values, (acc, item) => ({
+                                        task: "Sum these: " + acc + " and " + item
+                                    }), 0);
+
+                                    return { squares: values, sum: parseInt(sum) };
+                                })()
+                             `,
+                             sessionId: 'functional-session'
+                         }
+                     }]
+                 };
+             }
+
+             return { content: "Done: " + messages[messages.length - 1].content };
+        }
+    });
+
+    const agent6 = new VoltClawAgent({
+        llm: llm6,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent6.start();
+    const result6 = await agent6.query("Run MapReduce");
+    console.log("Result 6:", result6);
+    await agent6.stop();
+
     if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
     console.log("Demo complete.");
 }

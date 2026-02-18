@@ -164,7 +164,12 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_set = async (key: string, value: any) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             const store = (agent as any).store;
+             // Access 'store' which might be private in TS but accessible in JS runtime
+             // Or 'persistence' if stored there. In agent.ts, constructor assigns to this.store.
+             // But private fields might not be enumerable?
+             // In TS output, private fields are usually just property names unless using #private.
+             // We'll try both to be safe.
+             const store = (agent as any).store || (agent as any).persistence;
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -178,7 +183,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_get = async (key: string) => {
              const rootId = session.rootId || session.id;
              if (!rootId) return undefined;
-             const store = (agent as any).store;
+             const store = (agent as any).store || (agent as any).persistence;
              if (!store) return undefined;
 
              const rootSession = store.get(rootId);
@@ -188,7 +193,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_increment = async (key: string, delta: number = 1) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             const store = (agent as any).store;
+             const store = (agent as any).store || (agent as any).persistence;
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -205,7 +210,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_push = async (key: string, value: any) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             const store = (agent as any).store;
+             const store = (agent as any).store || (agent as any).persistence;
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -224,7 +229,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_trace = async () => {
              const trace = [];
              let currentId = session.id;
-             const store = (agent as any).store;
+             const store = (agent as any).store || (agent as any).persistence;
 
              while (currentId) {
                  const sess = store.get(currentId);
@@ -237,6 +242,84 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
                  if (trace.length > 50) break;
              }
              return trace;
+        };
+
+        // RLM Global: Map
+        ctxObj.rlm_map = async (items: any[], mapper: (item: any, index: number) => any) => {
+            if (!Array.isArray(items)) throw new Error('rlm_map expects an array');
+
+            const tasks: any[] = [];
+            for (let i = 0; i < items.length; i++) {
+                const def = mapper(items[i], i);
+                if (typeof def === 'string') {
+                    tasks.push({ task: def });
+                } else if (typeof def === 'object' && def.task) {
+                    tasks.push(def);
+                } else {
+                    throw new Error(`Mapper returned invalid task definition at index ${i}`);
+                }
+            }
+
+            return ctxObj.rlm_call_parallel(tasks);
+        };
+
+        // RLM Global: Filter
+        ctxObj.rlm_filter = async (items: any[], predicate: (item: any) => any) => {
+            if (!Array.isArray(items)) throw new Error('rlm_filter expects an array');
+
+            const tasks: any[] = [];
+            for (let i = 0; i < items.length; i++) {
+                const def = predicate(items[i]);
+                const taskObj = typeof def === 'string' ? { task: def } : def;
+
+                // Enforce boolean schema
+                taskObj.schema = { type: 'boolean' };
+                // Inject item into summary if not present?
+                // The user's predicate function should handle context.
+
+                tasks.push(taskObj);
+            }
+
+            const results = await ctxObj.rlm_call_parallel(tasks);
+
+            // Filter items where result is true
+            return items.filter((_, i) => {
+                const res = results[i];
+                // rlm_call_parallel returns array of results.
+                // Each result is the output from subtask.
+                // Since we enforced boolean schema, result.result should be parsed boolean if logic works?
+                // rlm_call_parallel resolves refs.
+                // But handleSubtaskResult only parses JSON if schema was sent.
+                // Yes, we sent schema.
+                // However, rlm_call_parallel implementation:
+                // returns { status: 'completed', results: [...] }
+                // where results[i] is { status, result, subId... }
+                // and result is string.
+
+                // We need to parse the boolean from the string result.
+                try {
+                    return JSON.parse(res.result) === true;
+                } catch {
+                    return false;
+                }
+            });
+        };
+
+        // RLM Global: Reduce
+        ctxObj.rlm_reduce = async (items: any[], reducer: (acc: any, item: any) => any, initialValue: any) => {
+            if (!Array.isArray(items)) throw new Error('rlm_reduce expects an array');
+
+            let acc = initialValue;
+            for (let i = 0; i < items.length; i++) {
+                const def = reducer(acc, items[i]);
+                const task = typeof def === 'string' ? def : def.task;
+                const options = typeof def === 'object' ? def : {};
+
+                // Call single
+                const res = await ctxObj.rlm_call(task, options);
+                acc = res;
+            }
+            return acc;
         };
 
         ctxObj.rlm_root_id = session.rootId;
