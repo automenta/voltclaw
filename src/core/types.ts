@@ -341,7 +341,9 @@ export interface MemoryQuery {
   tags?: string[];
   content?: string; // Simple text search
   embedding?: number[]; // Vector search
+  contextId?: string;
   limit?: number;
+  offset?: number;
 }
 
 export interface Session {

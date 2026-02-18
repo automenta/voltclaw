@@ -198,6 +198,11 @@ export class SQLiteStore implements Store {
       params.push(`%${query.content}%`);
     }
 
+    if (query.contextId) {
+      sql += ' AND context_id = ?';
+      params.push(query.contextId);
+    }
+
     // Tag search in JSON array is tricky in standard sqlite without extensions
     // Simple naive check: LIKE '%"tag"%'
     if (query.tags && query.tags.length > 0) {
@@ -221,10 +226,14 @@ export class SQLiteStore implements Store {
     // then sort by cosine similarity.
 
     if (!query.embedding) {
-      sql += ' ORDER BY timestamp DESC';
+      sql += ' ORDER BY timestamp ASC'; // Default to chronological for streaming usually, or strict order
       if (query.limit) {
         sql += ' LIMIT ?';
         params.push(query.limit);
+      }
+      if (query.offset) {
+        sql += ' OFFSET ?';
+        params.push(query.offset);
       }
     }
 
