@@ -65,6 +65,43 @@ export function createGraphTools(manager: GraphManager): Tool[] {
           matches: nodes.map(n => ({ id: n.id, label: n.label }))
         };
       }
+    },
+    {
+      name: 'graph_visualize',
+      description: 'Generate a Mermaid diagram text representation of a subgraph centered around a specific node',
+      parameters: {
+        type: 'object',
+        properties: {
+          nodeId: {
+            type: 'string',
+            description: 'The center node ID'
+          },
+          depth: {
+            type: 'number',
+            description: 'Traversal depth (default 1)'
+          }
+        },
+        required: ['nodeId']
+      },
+      execute: async (args: { nodeId: string; depth?: number }) => {
+        const { nodes, edges } = await manager.getSubgraph(args.nodeId, args.depth ?? 1);
+
+        let mermaid = 'graph TD\n';
+        for (const node of nodes) {
+            // Sanitize IDs for mermaid (remove spaces/special chars if needed, but assuming simple IDs for now)
+            // Just displaying label in box
+            mermaid += `    ${node.id}["${node.label}"]\n`;
+        }
+        for (const edge of edges) {
+            mermaid += `    ${edge.source} -- ${edge.relation} --> ${edge.target}\n`;
+        }
+
+        return {
+            mermaid,
+            nodeCount: nodes.length,
+            edgeCount: edges.length
+        };
+      }
     }
   ];
 }

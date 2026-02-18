@@ -14,7 +14,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
   return {
     name: 'code_exec',
-    description: 'Execute JavaScript in a persistent RLM sandbox. Use rlm_call() for recursion. Context survives across calls.',
+    description: 'Execute JavaScript in a persistent RLM sandbox. Globals: rlm_call(task), rlm_call_parallel(tasks), load_context(id). Context survives across calls.',
     parameters: {
       type: 'object',
       properties: {
@@ -118,9 +118,66 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
           // Basic console
           console: {
-              log: (...args: any[]) => { /* suppressed */ },
-              error: (...args: any[]) => { /* suppressed */ }
+              log: (...args: any[]) => {
+                  const ctx = replContexts.get(sessionId);
+                  if (ctx && (ctx as any).__log_collector) {
+                      (ctx as any).__log_collector.push(args.map(String).join(' '));
+                  }
+              },
+              error: (...args: any[]) => {
+                  const ctx = replContexts.get(sessionId);
+                  if (ctx && (ctx as any).__log_collector) {
+                      (ctx as any).__log_collector.push('[ERROR] ' + args.map(String).join(' '));
+                  }
+              }
           }
+        };
+
+        // Helper to load context by ID easily
+        ctxObj.load_context = async (id: string) => {
+             if (agent.memory) {
+                 const entries = await agent.memory.recall({ id });
+                 if (entries && entries.length > 0) {
+                     entries.sort((a, b) => {
+                         const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+                         const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+                         return idxA - idxB;
+                     });
+                     return entries.map(e => e.content).join('');
+                 }
+             }
+             return null;
+        };
+
+        // Helper to resolve RLM references
+        const resolveRLMRef = async (result: any) => {
+              let output = result;
+              // Transparently resolve RLM Reference
+              if (typeof output === 'string' && output.startsWith('[RLM_REF:') && agent.memory) {
+                   const refId = output.slice(9, -1);
+                   try {
+                       const entries = await agent.memory.recall({ id: refId });
+                       if (entries && entries.length > 0) {
+                           entries.sort((a, b) => {
+                               const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+                               const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+                               return idxA - idxB;
+                           });
+                           output = entries.map(e => e.content).join('');
+                       }
+                   } catch (e) {
+                       // ignore
+                   }
+              }
+
+              if (typeof output === 'string') {
+                  try {
+                     return JSON.parse(output);
+                  } catch {
+                     return output;
+                  }
+              }
+              return output;
         };
 
         // Define rlm_call separately to capture 'ctxObj' (which becomes 'ctx')
@@ -168,17 +225,42 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
               const result: any = await Promise.race([callPromise, timeoutPromise]);
               clearTimeout(timeoutId!);
 
-              if (result && typeof result.result === 'string') {
-                  try {
-                     return JSON.parse(result.result);
-                  } catch {
-                     return result.result;
-                  }
-              }
-              return result;
+              return resolveRLMRef(result?.result);
             } catch (e) {
                clearTimeout(timeoutId!);
                throw e; // Propagate error
+            }
+        };
+
+        ctxObj.rlm_call_parallel = async (tasks: Array<{ task: string, summary?: string }>) => {
+             const callPromise = agent.executeTool('call_parallel', {
+                  tasks
+             }, session, from || 'unknown');
+
+             // Timeout logic
+            let timeoutId: NodeJS.Timeout;
+            const timeoutPromise = new Promise((_, reject) => {
+               timeoutId = setTimeout(() => reject(new Error(`rlm_call_parallel timed out after ${RLM_CALL_TIMEOUT_MS}ms`)), RLM_CALL_TIMEOUT_MS);
+            });
+
+            try {
+               const result: any = await Promise.race([callPromise, timeoutPromise]);
+               clearTimeout(timeoutId!);
+
+               if (result.status === 'completed' && Array.isArray(result.results)) {
+                   // Resolve all results
+                   const resolved = await Promise.all(result.results.map(async (r: any) => {
+                       return {
+                           ...r,
+                           result: await resolveRLMRef(r.result)
+                       };
+                   }));
+                   return resolved;
+               }
+               return result;
+            } catch (e) {
+               clearTimeout(timeoutId!);
+               throw e;
             }
         };
 
@@ -186,8 +268,12 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         replContexts.set(sessionId, ctx);
       }
 
+      const logs: string[] = [];
+      const ctx = replContexts.get(sessionId)!;
+      (ctx as any).__log_collector = logs;
+
       try {
-        const result = vm.runInContext(code, replContexts.get(sessionId)!, {
+        const result = vm.runInContext(code, ctx, {
           timeout: 30000 // 30s timeout for sync code execution
         });
 
@@ -198,11 +284,15 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
         return {
           output: output,
+          logs: logs.length > 0 ? logs : undefined,
           sessionId,
-          contextSize: Object.keys(replContexts.get(sessionId)!).length
+          contextSize: Object.keys(ctx).length
         };
       } catch (e) {
-        return { error: (e as Error).message };
+        return {
+          error: (e as Error).message,
+          logs: logs.length > 0 ? logs : undefined
+        };
       }
     }
   };

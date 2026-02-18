@@ -107,4 +107,52 @@ export class GraphManager {
     if (!this.store.searchGraphNodes) return [];
     return this.store.searchGraphNodes(query);
   }
+
+  async getSubgraph(centerNodeId: string, depth: number = 1): Promise<{ nodes: GraphNode[], edges: GraphEdge[] }> {
+    if (!this.store.getGraphEdges || !this.store.getGraphNode) return { nodes: [], edges: [] };
+
+    const visitedNodes = new Set<string>();
+    const visitedEdges = new Set<string>();
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+
+    let currentLevel = [centerNodeId];
+
+    for (let i = 0; i < depth; i++) {
+      const nextLevel: string[] = [];
+      for (const nodeId of currentLevel) {
+        if (visitedNodes.has(nodeId)) continue;
+        visitedNodes.add(nodeId);
+
+        const node = await this.store.getGraphNode(nodeId);
+        if (node) nodes.push(node);
+
+        // Get neighbors
+        const neighbors = await this.getNeighbors(nodeId);
+        for (const edge of neighbors.edges) {
+            if (visitedEdges.has(edge.id)) continue;
+            visitedEdges.add(edge.id);
+            edges.push(edge);
+
+            if (!visitedNodes.has(edge.source)) nextLevel.push(edge.source);
+            if (!visitedNodes.has(edge.target)) nextLevel.push(edge.target);
+        }
+      }
+      currentLevel = nextLevel;
+    }
+
+    // Ensure all referenced nodes in edges are included
+    for (const edge of edges) {
+        if (!visitedNodes.has(edge.source)) {
+            const n = await this.store.getGraphNode(edge.source);
+            if (n) { nodes.push(n); visitedNodes.add(edge.source); }
+        }
+        if (!visitedNodes.has(edge.target)) {
+            const n = await this.store.getGraphNode(edge.target);
+            if (n) { nodes.push(n); visitedNodes.add(edge.target); }
+        }
+    }
+
+    return { nodes, edges };
+  }
 }

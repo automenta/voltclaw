@@ -82,11 +82,14 @@ export interface CallConfig {
   maxCalls?: number;
   budgetUSD?: number;
   timeoutMs?: number;
+  largeResultThreshold?: number;
 }
 
 export interface HistoryConfig {
   maxMessages?: number;
   autoPruneInterval?: number;
+  preserveLast?: number;
+  contextWindowSize?: number;
 }
 
 export interface ToolsConfig {
@@ -331,11 +334,13 @@ export interface MemoryEntry {
   tags?: string[];
   importance?: number;
   timestamp: number;
+  expiresAt?: number;
   contextId?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface MemoryQuery {
+  id?: string;
   type?: MemoryEntry['type'];
   level?: number;
   tags?: string[];

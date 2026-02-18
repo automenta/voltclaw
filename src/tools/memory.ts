@@ -32,6 +32,7 @@ export function createMemoryTools(manager: MemoryManager): Tool[] {
       parameters: {
         type: 'object',
         properties: {
+          id: { type: 'string', description: 'Query by specific memory ID' },
           query: { type: 'string', description: 'Text to search for' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Filter by tags' },
           limit: { type: 'number', description: 'Max results' }
@@ -39,6 +40,7 @@ export function createMemoryTools(manager: MemoryManager): Tool[] {
       },
       execute: async (args) => {
         const results = await manager.recall({
+          id: args.id as string | undefined,
           content: args.query as string | undefined,
           tags: args.tags as string[] | undefined,
           limit: (args.limit as number) ?? 5
