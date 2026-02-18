@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
+import type { Store, Session, MemoryEntry, MemoryQuery, GraphNode, GraphEdge } from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -36,13 +36,49 @@ export class SQLiteStore implements Store {
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
         content TEXT NOT NULL,
+        embedding TEXT, -- JSON array of numbers
         tags TEXT, -- JSON array
         importance INTEGER,
         timestamp INTEGER NOT NULL,
         context_id TEXT,
+        metadata TEXT, -- JSON object
+        level INTEGER DEFAULT 2, -- Default to Working (2)
+        last_access INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS graph_nodes (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL,
         metadata TEXT -- JSON object
       );
+      CREATE TABLE IF NOT EXISTS graph_edges (
+        source TEXT NOT NULL,
+        target TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight REAL,
+        PRIMARY KEY(source, target, relation),
+        FOREIGN KEY(source) REFERENCES graph_nodes(id),
+        FOREIGN KEY(target) REFERENCES graph_nodes(id)
+      );
     `);
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN embedding TEXT');
+    } catch {
+      // Ignore
+    }
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN level INTEGER DEFAULT 2');
+    } catch {
+      // Ignore
+    }
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN last_access INTEGER');
+    } catch {
+      // Ignore
+    }
 
     const rows = await this.db.all('SELECT key, data FROM sessions');
     for (const row of rows) {
@@ -99,18 +135,23 @@ export class SQLiteStore implements Store {
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const timestamp = Date.now();
+    const lastAccess = timestamp;
+    const level = entry.level ?? 2; // Default to Working (2)
 
     await this.db!.run(
-      `INSERT INTO memories (id, type, content, tags, importance, timestamp, context_id, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memories (id, type, content, embedding, tags, importance, timestamp, context_id, metadata, level, last_access)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       entry.type,
       entry.content,
+      entry.embedding ? JSON.stringify(entry.embedding) : null,
       JSON.stringify(entry.tags ?? []),
       entry.importance ?? 0,
       timestamp,
       entry.contextId ?? null,
-      JSON.stringify(entry.metadata ?? {})
+      JSON.stringify(entry.metadata ?? {}),
+      level,
+      lastAccess
     );
 
     return id;
@@ -132,33 +173,87 @@ export class SQLiteStore implements Store {
       params.push(`%${query.content}%`);
     }
 
+    if (query.level !== undefined) {
+      sql += ' AND level = ?';
+      params.push(query.level);
+    }
+
     // Tag search in JSON array is tricky in standard sqlite without extensions
     // Simple naive check: LIKE '%"tag"%'
     if (query.tags && query.tags.length > 0) {
       for (const tag of query.tags) {
         sql += ' AND tags LIKE ?';
-        params.push(`%${tag}%`); // Very loose matching, improved in future
+        // Use JSON.stringify to ensure we match the quoted string, avoiding partial matches
+        // e.g. "apple" won't match "pineapple"
+        const jsonTag = JSON.stringify(tag);
+        // We strip the leading/trailing quotes from JSON.stringify because we're inside LIKE %...%
+        // Actually, we WANT the quotes to ensure boundary.
+        // JSON.stringify("apple") -> "apple"
+        // So we search for %"apple"%
+        params.push(`%${jsonTag}%`);
       }
     }
 
-    sql += ' ORDER BY timestamp DESC';
+    // If query has embedding, we ignore default sort order and limit here,
+    // because we need to fetch all candidates to compute similarity in memory
+    // unless we combine it with other filters.
+    // For now, if embedding is present, fetch ALL candidates matching other criteria
+    // then sort by cosine similarity.
 
-    if (query.limit) {
-      sql += ' LIMIT ?';
-      params.push(query.limit);
+    if (!query.embedding) {
+      sql += ' ORDER BY timestamp DESC';
+      if (query.limit) {
+        sql += ' LIMIT ?';
+        params.push(query.limit);
+      }
     }
 
     const rows = await this.db!.all(sql, params);
-    return rows.map(row => ({
+
+    let entries = rows.map(row => ({
       id: row.id,
       type: row.type as MemoryEntry['type'],
       content: row.content,
+      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,
       contextId: row.context_id,
       metadata: JSON.parse(row.metadata || '{}')
     }));
+
+    if (query.embedding && query.embedding.length > 0) {
+      entries = entries
+        .map(entry => ({
+          ...entry,
+          similarity: this.cosineSimilarity(query.embedding!, entry.embedding)
+        }))
+        .filter(e => e.similarity > -2) // Keep all, sort below
+        .sort((a, b) => b.similarity - a.similarity);
+
+      if (query.limit) {
+        entries = entries.slice(0, query.limit);
+      }
+
+      // Strip similarity for return type compatibility, or keep it if we change type
+      // MemoryEntry doesn't have similarity, but it's fine to return extended objects usually.
+    }
+
+    return entries;
+  }
+
+  private cosineSimilarity(a: number[], b?: number[]): number {
+    if (!b || a.length !== b.length) return -1;
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
   async removeMemory(id: string): Promise<void> {
@@ -173,11 +268,59 @@ export class SQLiteStore implements Store {
       id: row.id,
       type: row.type as MemoryEntry['type'],
       content: row.content,
+      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,
+      lastAccess: row.last_access,
+      level: row.level,
       contextId: row.context_id,
       metadata: JSON.parse(row.metadata || '{}')
+    }));
+  }
+
+  async updateMemoryLevel(id: string, level: number): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run('UPDATE memories SET level = ?, last_access = ? WHERE id = ?', level, Date.now(), id);
+  }
+
+  async addGraphNode(node: GraphNode): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_nodes (id, label, type, metadata) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET label = excluded.label, type = excluded.type, metadata = excluded.metadata`,
+      node.id,
+      node.label,
+      node.type,
+      JSON.stringify(node.metadata ?? {})
+    );
+  }
+
+  async addGraphEdge(edge: GraphEdge): Promise<void> {
+    if (!this.db) await this.load();
+    // Ensure nodes exist to satisfy FK constraints (or just ignore FK for simplicity if needed, but safer to enforce)
+    // Actually, graph extraction might produce edges where nodes don't exist yet if we process out of order.
+    // For simplicity, we assume nodes are added first or we use INSERT OR IGNORE on nodes if missing (tricky).
+    // Let's assume the caller handles node creation.
+
+    await this.db!.run(
+      `INSERT INTO graph_edges (source, target, relation, weight) VALUES (?, ?, ?, ?)
+       ON CONFLICT(source, target, relation) DO UPDATE SET weight = excluded.weight`,
+      edge.source,
+      edge.target,
+      edge.relation,
+      edge.weight ?? 1.0
+    );
+  }
+
+  async getGraphNeighbors(nodeId: string): Promise<GraphEdge[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM graph_edges WHERE source = ? OR target = ?', nodeId, nodeId);
+    return rows.map(row => ({
+      source: row.source,
+      target: row.target,
+      relation: row.relation,
+      weight: row.weight
     }));
   }
 

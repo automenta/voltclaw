@@ -13,7 +13,9 @@ import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
 import { createDLQTools } from '../tools/dlq.js';
 import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager } from '../memory/manager.js';
+import { ContextManager } from './context-manager.js';
 import { createMemoryTools } from '../tools/memory.js';
+import { createTestTools } from '../tools/test.js';
 
 import type {
   VoltClawAgentOptions,
@@ -83,6 +85,7 @@ export class VoltClawAgent {
   private readonly fallbacks: Record<string, string>;
   public readonly dlq: DeadLetterQueue;
   public readonly memory: MemoryManager;
+  public readonly contextManager: ContextManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -151,7 +154,8 @@ export class VoltClawAgent {
         this.auditLog = new FileAuditLog(options.audit.path);
     }
 
-    this.memory = new MemoryManager(this.store);
+    this.memory = new MemoryManager(this.store, this.llm);
+    this.contextManager = new ContextManager();
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
@@ -167,6 +171,10 @@ export class VoltClawAgent {
     // Register memory tools if store supports it
     if (this.store.createMemory) {
       this.registerTools(createMemoryTools(this.memory));
+    }
+
+    if (options.enableSelfTest) {
+      this.registerTools(createTestTools(this));
     }
 
     if (options.middleware) {
@@ -386,6 +394,9 @@ export class VoltClawAgent {
     session.actualTokensUsed = 0;
     session.topLevelStartedAt = Date.now();
 
+    // Optimize context if history is too long
+    session.history = await this.contextManager.summarizeHistory(session.history, this.llm);
+
     const systemPrompt = this.buildSystemPrompt(session.depth);
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -439,6 +450,9 @@ export class VoltClawAgent {
     session.estCostUSD = 0;
     session.actualTokensUsed = 0;
     session.topLevelStartedAt = Date.now();
+
+    // Optimize context if history is too long
+    session.history = await this.contextManager.summarizeHistory(session.history, this.llm);
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
     const messages: ChatMessage[] = [
@@ -584,6 +598,9 @@ export class VoltClawAgent {
     session.estCostUSD = 0;
     session.actualTokensUsed = 0;
     session.topLevelStartedAt = Date.now();
+
+    // Optimize context if history is too long
+    session.history = await this.contextManager.summarizeHistory(session.history, this.llm);
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
     const messages: ChatMessage[] = [
