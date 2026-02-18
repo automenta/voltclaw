@@ -163,4 +163,20 @@ describe('SQLiteStore Integration', () => {
     // C: ~0.99
     // B: 0.0
   });
+
+  it('should store and retrieve graph nodes and edges', async () => {
+    const store = new SQLiteStore({ path: dbPath });
+    await store.load();
+
+    await store.addGraphNode!({ id: 'node1', label: 'Node 1', type: 'Test' });
+    await store.addGraphNode!({ id: 'node2', label: 'Node 2', type: 'Test' });
+
+    await store.addGraphEdge!({ source: 'node1', target: 'node2', relation: 'links_to', weight: 0.5 });
+
+    const neighbors = await store.getGraphNeighbors!('node1');
+    expect(neighbors).toHaveLength(1);
+    expect(neighbors[0].target).toBe('node2');
+    expect(neighbors[0].relation).toBe('links_to');
+    expect(neighbors[0].weight).toBe(0.5);
+  });
 });

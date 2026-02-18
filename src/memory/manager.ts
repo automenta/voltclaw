@@ -1,12 +1,15 @@
 import { type Store, type MemoryEntry, type MemoryQuery, type LLMProvider, MemoryLevel } from '../core/types.js';
+import { GraphManager } from './graph.js';
 
 export class MemoryManager {
   private readonly store: Store;
   private readonly llm?: LLMProvider;
+  public readonly graph: GraphManager;
 
   constructor(store: Store, llm?: LLMProvider) {
     this.store = store;
     this.llm = llm;
+    this.graph = new GraphManager(store, llm);
   }
 
   async storeMemory(
@@ -30,7 +33,7 @@ export class MemoryManager {
       }
     }
 
-    return this.store.createMemory({
+    const id = await this.store.createMemory({
       content,
       type,
       tags,
@@ -38,6 +41,16 @@ export class MemoryManager {
       embedding,
       level
     });
+
+    // Automatically extract graph entities for high importance memories
+    if (importance >= 8) {
+      // Run in background to avoid blocking
+      this.graph.extractAndStore(content).catch(e => {
+        console.error('Background graph extraction failed:', e);
+      });
+    }
+
+    return id;
   }
 
   async promote(id: string): Promise<void> {

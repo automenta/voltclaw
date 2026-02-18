@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
+import type { Store, Session, MemoryEntry, MemoryQuery, GraphNode, GraphEdge } from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -44,6 +44,21 @@ export class SQLiteStore implements Store {
         metadata TEXT, -- JSON object
         level INTEGER DEFAULT 2, -- Default to Working (2)
         last_access INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS graph_nodes (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL,
+        metadata TEXT -- JSON object
+      );
+      CREATE TABLE IF NOT EXISTS graph_edges (
+        source TEXT NOT NULL,
+        target TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight REAL,
+        PRIMARY KEY(source, target, relation),
+        FOREIGN KEY(source) REFERENCES graph_nodes(id),
+        FOREIGN KEY(target) REFERENCES graph_nodes(id)
       );
     `);
 
@@ -267,6 +282,46 @@ export class SQLiteStore implements Store {
   async updateMemoryLevel(id: string, level: number): Promise<void> {
     if (!this.db) await this.load();
     await this.db!.run('UPDATE memories SET level = ?, last_access = ? WHERE id = ?', level, Date.now(), id);
+  }
+
+  async addGraphNode(node: GraphNode): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_nodes (id, label, type, metadata) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET label = excluded.label, type = excluded.type, metadata = excluded.metadata`,
+      node.id,
+      node.label,
+      node.type,
+      JSON.stringify(node.metadata ?? {})
+    );
+  }
+
+  async addGraphEdge(edge: GraphEdge): Promise<void> {
+    if (!this.db) await this.load();
+    // Ensure nodes exist to satisfy FK constraints (or just ignore FK for simplicity if needed, but safer to enforce)
+    // Actually, graph extraction might produce edges where nodes don't exist yet if we process out of order.
+    // For simplicity, we assume nodes are added first or we use INSERT OR IGNORE on nodes if missing (tricky).
+    // Let's assume the caller handles node creation.
+
+    await this.db!.run(
+      `INSERT INTO graph_edges (source, target, relation, weight) VALUES (?, ?, ?, ?)
+       ON CONFLICT(source, target, relation) DO UPDATE SET weight = excluded.weight`,
+      edge.source,
+      edge.target,
+      edge.relation,
+      edge.weight ?? 1.0
+    );
+  }
+
+  async getGraphNeighbors(nodeId: string): Promise<GraphEdge[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM graph_edges WHERE source = ? OR target = ?', nodeId, nodeId);
+    return rows.map(row => ({
+      source: row.source,
+      target: row.target,
+      relation: row.relation,
+      weight: row.weight
+    }));
   }
 
   async consolidateMemories(): Promise<void> {

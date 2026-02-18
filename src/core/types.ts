@@ -255,6 +255,24 @@ export interface Store {
   exportMemories?(): Promise<MemoryEntry[]>;
   consolidateMemories?(): Promise<void>;
   updateMemoryLevel?(id: string, level: number): Promise<void>;
+  // Optional GraphStore interface methods
+  addGraphNode?(node: GraphNode): Promise<void>;
+  addGraphEdge?(edge: GraphEdge): Promise<void>;
+  getGraphNeighbors?(nodeId: string): Promise<GraphEdge[]>;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  relation: string;
+  weight?: number;
 }
 
 export enum MemoryLevel {
