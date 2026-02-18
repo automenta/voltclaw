@@ -30,10 +30,12 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
     },
     async execute(args: Record<string, unknown>, agent: any, session: any, from?: string) {
       const code = args.code as string;
-      const sessionId = (args.sessionId as string) || 'default';
+      const userSessionId = (args.sessionId as string) || 'default';
+      // Scope the REPL session to the current agent session (e.g. subtask) to prevent collisions in RLM
+      const internalSessionId = session && session.id ? `${session.id}:${userSessionId}` : userSessionId;
       const contextKeys = (args.contextKeys as string[]) || [];
 
-      if (!replContexts.has(sessionId)) {
+      if (!replContexts.has(internalSessionId)) {
         const execTool = (name: string, args: any) => agent.executeTool(name, args, session, from || 'unknown');
 
         // Helpers
@@ -119,19 +121,65 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
           // Basic console
           console: {
               log: (...args: any[]) => {
-                  const ctx = replContexts.get(sessionId);
+                  const ctx = replContexts.get(internalSessionId);
                   if (ctx && (ctx as any).__log_collector) {
                       (ctx as any).__log_collector.push(args.map(String).join(' '));
                   }
               },
               error: (...args: any[]) => {
-                  const ctx = replContexts.get(sessionId);
+                  const ctx = replContexts.get(internalSessionId);
                   if (ctx && (ctx as any).__log_collector) {
                       (ctx as any).__log_collector.push('[ERROR] ' + args.map(String).join(' '));
                   }
               }
           }
         };
+
+        // RLM Global: Shared Memory
+        ctxObj.rlm_shared_set = async (key: string, value: any) => {
+             const rootId = session.rootId || session.id;
+             if (!rootId) throw new Error('Root ID not found');
+             const store = (agent as any).store;
+             if (!store) throw new Error('Store not available');
+
+             const rootSession = store.get(rootId);
+             if (!rootSession.sharedData) rootSession.sharedData = {};
+             rootSession.sharedData[key] = value;
+
+             if (store.save) await store.save();
+             return true;
+        };
+
+        ctxObj.rlm_shared_get = async (key: string) => {
+             const rootId = session.rootId || session.id;
+             if (!rootId) return undefined;
+             const store = (agent as any).store;
+             if (!store) return undefined;
+
+             const rootSession = store.get(rootId);
+             return rootSession.sharedData?.[key];
+        };
+
+        // RLM Global: Trace
+        ctxObj.rlm_trace = async () => {
+             const trace = [];
+             let currentId = session.id;
+             const store = (agent as any).store;
+
+             while (currentId) {
+                 const sess = store.get(currentId);
+                 trace.push({
+                     id: currentId,
+                     depth: sess.depth,
+                     role: sess.parentId ? 'subagent' : 'root'
+                 });
+                 currentId = sess.parentId;
+                 if (trace.length > 50) break;
+             }
+             return trace;
+        };
+
+        ctxObj.rlm_root_id = session.rootId;
 
         // Helper to load context by ID easily
         ctxObj.load_context = async (id: string) => {
@@ -185,7 +233,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
             let summary = '';
             if (keys && keys.length > 0) {
                const extracted: Record<string, any> = {};
-               const currentCtx = replContexts.get(sessionId);
+               const currentCtx = replContexts.get(internalSessionId);
                if (currentCtx) {
                    for (const k of keys) {
                        if (k in currentCtx) extracted[k] = currentCtx[k];
@@ -198,7 +246,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
                     const memoryId = await agent.memory.storeMemory(
                       contextStr,
                       'working',
-                      ['rlm_context', `session:${sessionId}`],
+                      ['rlm_context', `session:${internalSessionId}`],
                       10 // High importance
                     );
                     summary = `RLM Context stored in memory. Use memory_recall(id='${memoryId}') to retrieve it.`;
@@ -225,7 +273,8 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
               const result: any = await Promise.race([callPromise, timeoutPromise]);
               clearTimeout(timeoutId!);
 
-              return resolveRLMRef(result?.result);
+              // Return the inner result if available (standard success), otherwise the whole object (error/mock)
+              return resolveRLMRef(result?.result ?? result);
             } catch (e) {
                clearTimeout(timeoutId!);
                throw e; // Propagate error
@@ -265,11 +314,11 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         };
 
         const ctx = vm.createContext(ctxObj);
-        replContexts.set(sessionId, ctx);
+        replContexts.set(internalSessionId, ctx);
       }
 
       const logs: string[] = [];
-      const ctx = replContexts.get(sessionId)!;
+      const ctx = replContexts.get(internalSessionId)!;
       (ctx as any).__log_collector = logs;
 
       try {
@@ -285,7 +334,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         return {
           output: output,
           logs: logs.length > 0 ? logs : undefined,
-          sessionId,
+          sessionId: userSessionId,
           contextSize: Object.keys(ctx).length
         };
       } catch (e) {

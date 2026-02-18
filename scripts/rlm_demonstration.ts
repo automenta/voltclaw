@@ -186,6 +186,121 @@ async function runDemo() {
     }
 
     await agent2.stop();
+
+    // --- Test 3: Shared Memory & Trace ---
+    console.log("\n--- Test 3: Shared Memory & Trace ---");
+
+    let step3 = 0;
+    const llm3 = new MockLLM({
+        handler: async (messages) => {
+             const last = messages[messages.length - 1];
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (last.role === 'user') {
+                     return {
+                         content: "Checking shared memory...",
+                         toolCalls: [{
+                             id: 'call_share_sub',
+                             name: 'code_exec',
+                             arguments: {
+                                 code: `
+                                    (async () => {
+                                        const val = await rlm_shared_get('counter');
+                                        const trace = await rlm_trace();
+                                        await rlm_shared_set('counter', val + 1);
+                                        return { val, trace };
+                                    })()
+                                 `,
+                                 sessionId: 'sub-session'
+                             }
+                         }]
+                     };
+                 }
+                 if (last.role === 'tool') {
+                     return { content: `Sub-agent done. Result: ${last.content}` };
+                 }
+             }
+
+             // Root Agent Logic
+             if (last.role === 'user' && last.content?.includes('Shared Memory')) {
+                 step3 = 1;
+                 return {
+                     content: "Step 1: Init shared memory",
+                     toolCalls: [{
+                         id: 'call_share_1',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    await rlm_shared_set('counter', 10);
+                                    return "Set counter to 10";
+                                })()
+                             `,
+                             sessionId: 'root-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 1) {
+                 step3 = 2;
+                 return {
+                     content: "Step 2: Call sub-agent",
+                     toolCalls: [{
+                         id: 'call_share_2',
+                         name: 'call', // Use 'call' tool directly for simplicity in mock
+                         arguments: {
+                             task: "Increment counter",
+                             summary: "Please increment the shared counter"
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 2) {
+                 step3 = 3;
+                 // Sub-agent returned
+                 console.log("Sub-agent result seen by root:", last.content);
+                 return {
+                     content: "Step 3: Read back",
+                     toolCalls: [{
+                         id: 'call_share_3',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const val = await rlm_shared_get('counter');
+                                    return val;
+                                })()
+                             `,
+                             sessionId: 'root-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 3) {
+                 return { content: `Final Value: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 3" };
+        }
+    });
+
+    const agent3 = new VoltClawAgent({
+        llm: llm3,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent3.start();
+    const result3 = await agent3.query("Test Shared Memory features.");
+    console.log("Result 3:", result3);
+    await agent3.stop();
+
     if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
     console.log("Demo complete.");
 }

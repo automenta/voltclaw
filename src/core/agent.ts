@@ -427,6 +427,10 @@ export class VoltClawAgent {
     // For now, simple append
     if (session.depth === undefined) session.depth = 0;
 
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
+
     session.history.push({ role: 'user', content: message });
     
     // Use handleTopLevel logic but wait for result?
@@ -489,6 +493,10 @@ export class VoltClawAgent {
     const session = this.store.get('self', true);
 
     if (session.depth === undefined) session.depth = 0;
+
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
 
     session.history.push({ role: 'user', content: message });
 
@@ -663,6 +671,9 @@ export class VoltClawAgent {
     from: string
   ): Promise<void> {
     session.depth = 0;
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
     session.subTasks = {};
     session.callCount = 0;
     session.estCostUSD = 0;
@@ -731,8 +742,12 @@ export class VoltClawAgent {
     const contextSummary = (parsed.contextSummary as string) ?? '';
     const subId = parsed.subId as string;
     const parentPubkey = parsed.parentPubkey as string | undefined;
+    const rootId = parsed.rootId as string | undefined;
+    const parentId = parsed.parentId as string | undefined;
 
     session.depth = depth;
+    session.rootId = rootId;
+    session.parentId = parentId;
 
     const mustFinish = depth >= this.maxDepth - 1
       ? '\nMUST produce final concise answer NOW. No further calls.'
@@ -1010,7 +1025,9 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
       subId,
       task,
       contextSummary: summary ?? '',
-      depth
+      depth,
+      rootId: session.rootId,
+      parentId: session.id
     });
 
     await this.channel.send(this.channel.identity.publicKey, payload);
@@ -1089,7 +1106,9 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
         subId,
         task: t.task,
         contextSummary: t.summary ?? '',
-        depth
+        depth,
+        rootId: session.rootId,
+        parentId: session.id
       });
 
       await this.channel.send(this.channel.identity.publicKey, payload);
@@ -1168,6 +1187,8 @@ RLM ENVIRONMENT:
 - You have a persistent JavaScript sandbox via 'code_exec'.
 - Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
 - Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
+- Use 'rlm_shared_set(key, value)' and 'rlm_shared_get(key)' to access shared memory across the recursion tree.
+- Use 'rlm_trace()' to inspect the call stack.
 - Use 'load_context(id)' to retrieve specific memories by ID.
 - Console logs (console.log) are captured and returned to you for debugging.
 `;

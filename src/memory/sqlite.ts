@@ -128,10 +128,13 @@ export class SQLiteStore implements Store {
         actualTokensUsed: 0,
         subTasks: {},
         depth: 0,
-        topLevelStartedAt: 0
+        topLevelStartedAt: 0,
+        sharedData: {}
       });
     }
-    return this.cache.get(key)!;
+    const session = this.cache.get(key)!;
+    session.id = key;
+    return session;
   }
 
   getAll(): Record<string, Session> {

@@ -352,6 +352,10 @@ export interface MemoryQuery {
 }
 
 export interface Session {
+  id?: string;
+  parentId?: string;
+  rootId?: string;
+  sharedData?: Record<string, unknown>;
   history: ChatMessage[];
   callCount: number;
   estCostUSD: number;

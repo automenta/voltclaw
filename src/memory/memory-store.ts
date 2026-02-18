@@ -25,7 +25,9 @@ export class MemoryStore implements Store {
       this.data[sessionKey] = this.createSession();
     }
     
-    return this.data[sessionKey];
+    const session = this.data[sessionKey];
+    session.id = sessionKey;
+    return session;
   }
 
   getAll(): Record<string, Session> {
@@ -51,7 +53,8 @@ export class MemoryStore implements Store {
       actualTokensUsed: 0,
       subTasks: {},
       depth: 0,
-      topLevelStartedAt: 0
+      topLevelStartedAt: 0,
+      sharedData: {}
     };
   }
 }
