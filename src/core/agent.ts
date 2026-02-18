@@ -16,8 +16,10 @@ import { MemoryManager, GraphManager } from '../memory/index.js';
 import { createMemoryTools } from '../tools/memory.js';
 import { createGraphTools } from '../tools/graph.js';
 import { createSelfTestTool } from '../tools/self-test.js';
+import { createDocumentationTools } from '../tools/documentation.js';
 import { ContextManager } from './context-manager.js';
 import { SelfTestFramework } from './self-test.js';
+import { DocumentationManager } from './documentation.js';
 
 import type {
   VoltClawAgentOptions,
@@ -90,6 +92,7 @@ export class VoltClawAgent {
   public readonly graph: GraphManager;
   public readonly contextManager: ContextManager;
   public readonly selfTest: SelfTestFramework;
+  public readonly docs: DocumentationManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -165,6 +168,7 @@ export class VoltClawAgent {
       preserveLast: 20
     });
     this.selfTest = new SelfTestFramework(this);
+    this.docs = new DocumentationManager(this);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
@@ -174,6 +178,9 @@ export class VoltClawAgent {
 
     // Register self-test tool
     this.registerTools([createSelfTestTool(this.selfTest)]);
+
+    // Register documentation tools
+    this.registerTools(createDocumentationTools(this.docs));
 
     // Register DLQ tools
     if (options.dlq?.enableTools) {
