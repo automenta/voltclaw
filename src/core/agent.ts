@@ -15,6 +15,7 @@ import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager, GraphManager } from '../memory/index.js';
 import { createMemoryTools } from '../tools/memory.js';
 import { createGraphTools } from '../tools/graph.js';
+import { ContextManager } from './context-manager.js';
 
 import type {
   VoltClawAgentOptions,
@@ -85,6 +86,7 @@ export class VoltClawAgent {
   public readonly dlq: DeadLetterQueue;
   public readonly memory: MemoryManager;
   public readonly graph: GraphManager;
+  public readonly contextManager: ContextManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -155,6 +157,10 @@ export class VoltClawAgent {
 
     this.memory = new MemoryManager(this.store, this.llm);
     this.graph = new GraphManager(this.store, this.llm);
+    this.contextManager = new ContextManager(this.llm, {
+      maxMessages: this.maxHistory,
+      preserveLast: 20
+    });
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
@@ -395,10 +401,12 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory)
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     const cb = this.getCircuitBreaker('llm');
     let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
@@ -449,10 +457,12 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory)
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     if (!this.llm.stream) {
       const response = await this.query(message, _options);
@@ -594,11 +604,13 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory),
       { role: 'user', content }
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     const cb = this.getCircuitBreaker('llm');
     let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
