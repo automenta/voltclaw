@@ -13,6 +13,7 @@ import { createAllTools } from './loader.js';
 import { createGraphTools } from './graph.js';
 import { createSelfTestTool } from './self-test.js';
 import { createDocumentationTools } from './documentation.js';
+import { createPromptTools } from './prompt.js';
 
 export { ToolRegistry, type ToolExecutor };
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParameterProperty };
@@ -22,7 +23,7 @@ export { httpGetTool, httpPostTool };
 export { readFileTool, writeFileTool, listFilesTool };
 export { restartTool };
 export { grepTool, globTool, editTool, executeTool };
-export { createAllTools, createGraphTools, createSelfTestTool, createDocumentationTools };
+export { createAllTools, createGraphTools, createSelfTestTool, createDocumentationTools, createPromptTools };
 
 export function createBuiltinTools(): Tool[] {
   return [

@@ -261,6 +261,33 @@ export interface Store {
   getGraphNode?(id: string): Promise<GraphNode | undefined>;
   getGraphEdges?(query: GraphQuery): Promise<GraphEdge[]>;
   searchGraphNodes?(query: string): Promise<GraphNode[]>;
+  // Prompt methods
+  getPromptTemplate?(id: string): Promise<PromptTemplate | undefined>;
+  savePromptTemplate?(template: PromptTemplate): Promise<void>;
+  getPromptVersion?(templateId: string, version: number): Promise<PromptVersion | undefined>;
+  savePromptVersion?(version: PromptVersion): Promise<void>;
+  listPromptTemplates?(): Promise<PromptTemplate[]>;
+}
+
+export interface PromptTemplate {
+  id: string;
+  description: string;
+  latestVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromptVersion {
+  templateId: string;
+  version: number;
+  content: string;
+  changelog?: string;
+  metrics?: {
+    successCount: number;
+    failureCount: number;
+    avgCost: number;
+  };
+  createdAt: number;
 }
 
 export interface GraphNode {

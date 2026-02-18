@@ -1,6 +1,10 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session, MemoryEntry, MemoryQuery, GraphNode, GraphEdge, GraphQuery } from '../core/types.js';
+import type {
+  Store, Session, MemoryEntry, MemoryQuery,
+  GraphNode, GraphEdge, GraphQuery,
+  PromptTemplate, PromptVersion
+} from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -60,6 +64,23 @@ export class SQLiteStore implements Store {
         created_at INTEGER NOT NULL,
         FOREIGN KEY(source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
         FOREIGN KEY(target) REFERENCES graph_nodes(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS prompt_templates (
+        id TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        latest_version INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS prompt_versions (
+        template_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        changelog TEXT,
+        metrics TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (template_id, version),
+        FOREIGN KEY(template_id) REFERENCES prompt_templates(id) ON DELETE CASCADE
       );
     `);
 
@@ -443,6 +464,85 @@ export class SQLiteStore implements Store {
       id: row.id,
       label: row.label,
       metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  // Prompt Methods
+
+  async getPromptTemplate(id: string): Promise<PromptTemplate | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get('SELECT * FROM prompt_templates WHERE id = ?', id);
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      description: row.description,
+      latestVersion: row.latest_version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async savePromptTemplate(template: PromptTemplate): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO prompt_templates (id, description, latest_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         description = excluded.description,
+         latest_version = excluded.latest_version,
+         updated_at = excluded.updated_at`,
+      template.id,
+      template.description,
+      template.latestVersion,
+      template.createdAt,
+      template.updatedAt
+    );
+  }
+
+  async getPromptVersion(templateId: string, version: number): Promise<PromptVersion | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get(
+      'SELECT * FROM prompt_versions WHERE template_id = ? AND version = ?',
+      templateId, version
+    );
+    if (!row) return undefined;
+    return {
+      templateId: row.template_id,
+      version: row.version,
+      content: row.content,
+      changelog: row.changelog,
+      metrics: JSON.parse(row.metrics || '{}'),
+      createdAt: row.created_at
+    };
+  }
+
+  async savePromptVersion(version: PromptVersion): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO prompt_versions (template_id, version, content, changelog, metrics, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(template_id, version) DO UPDATE SET
+         content = excluded.content,
+         changelog = excluded.changelog,
+         metrics = excluded.metrics`,
+      version.templateId,
+      version.version,
+      version.content,
+      version.changelog,
+      JSON.stringify(version.metrics ?? {}),
+      version.createdAt
+    );
+  }
+
+  async listPromptTemplates(): Promise<PromptTemplate[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM prompt_templates ORDER BY updated_at DESC');
+    return rows.map(row => ({
+      id: row.id,
+      description: row.description,
+      latestVersion: row.latest_version,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }));
