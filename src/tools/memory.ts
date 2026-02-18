@@ -76,15 +76,43 @@ export function createMemoryTools(manager: MemoryManager): Tool[] {
     },
     {
       name: 'memory_consolidate',
-      description: 'Trigger memory optimization and cleanup.',
+      description: 'Trigger memory optimization and cleanup. Summarizes recent working memories into long-term memory.',
       parameters: {
         type: 'object',
         properties: {},
         required: []
       },
-      execute: async () => {
+      execute: async (_args, agent) => {
+        // 1. Retrieve recent working memories
+        const recentMemories = await manager.recall({ type: 'working', limit: 50 });
+
+        // Cast agent to allow calling query (avoiding circular type import)
+        const voltclaw = agent as any;
+
+        if (recentMemories.length > 5 && voltclaw && typeof voltclaw.query === 'function') {
+             const memoryContent = recentMemories.map(m => `- ${m.content} (importance: ${m.importance})`).join('\n');
+             const prompt = `Consolidate these working memories into a single concise long-term memory summary. Focus on key facts and high importance items.\n\nMemories:\n${memoryContent}`;
+
+             try {
+                 // Use a specialized query or just standard query.
+                 // Note: querying might trigger recursive calls or tools, which is fine but we want a direct answer.
+                 const summary = await voltclaw.query(prompt);
+
+                 // Store summary
+                 await manager.storeMemory(
+                     summary,
+                     'long_term',
+                     ['summary', 'consolidation'],
+                     8 // High importance for summaries
+                 );
+             } catch (e) {
+                 // Ignore LLM errors, proceed to pruning
+                 console.error('Consolidation summary failed:', e);
+             }
+        }
+
         await manager.consolidate();
-        return { status: 'consolidated' };
+        return { status: 'consolidated', processed: recentMemories.length };
       }
     }
   ];

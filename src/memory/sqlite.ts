@@ -137,7 +137,14 @@ export class SQLiteStore implements Store {
     if (query.tags && query.tags.length > 0) {
       for (const tag of query.tags) {
         sql += ' AND tags LIKE ?';
-        params.push(`%${tag}%`); // Very loose matching, improved in future
+        // Use JSON.stringify to ensure we match the quoted string, avoiding partial matches
+        // e.g. "apple" won't match "pineapple"
+        const jsonTag = JSON.stringify(tag);
+        // We strip the leading/trailing quotes from JSON.stringify because we're inside LIKE %...%
+        // Actually, we WANT the quotes to ensure boundary.
+        // JSON.stringify("apple") -> "apple"
+        // So we search for %"apple"%
+        params.push(`%${jsonTag}%`);
       }
     }
 
