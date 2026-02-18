@@ -186,6 +186,347 @@ async function runDemo() {
     }
 
     await agent2.stop();
+
+    // --- Test 3: Shared Memory & Trace ---
+    console.log("\n--- Test 3: Shared Memory & Trace ---");
+
+    let step3 = 0;
+    const llm3 = new MockLLM({
+        handler: async (messages) => {
+             const last = messages[messages.length - 1];
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (last.role === 'user') {
+                     return {
+                         content: "Checking shared memory...",
+                         toolCalls: [{
+                             id: 'call_share_sub',
+                             name: 'code_exec',
+                             arguments: {
+                                 code: `
+                                    (async () => {
+                                        const val = await rlm_shared_get('counter');
+                                        const trace = await rlm_trace();
+                                        await rlm_shared_set('counter', val + 1);
+                                        return { val, trace };
+                                    })()
+                                 `,
+                                 sessionId: 'sub-session'
+                             }
+                         }]
+                     };
+                 }
+                 if (last.role === 'tool') {
+                     return { content: `Sub-agent done. Result: ${last.content}` };
+                 }
+             }
+
+             // Root Agent Logic
+             if (last.role === 'user' && last.content?.includes('Shared Memory')) {
+                 step3 = 1;
+                 return {
+                     content: "Step 1: Init shared memory",
+                     toolCalls: [{
+                         id: 'call_share_1',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    await rlm_shared_set('counter', 10);
+                                    return "Set counter to 10";
+                                })()
+                             `,
+                             sessionId: 'root-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 1) {
+                 step3 = 2;
+                 return {
+                     content: "Step 2: Call sub-agent",
+                     toolCalls: [{
+                         id: 'call_share_2',
+                         name: 'call', // Use 'call' tool directly for simplicity in mock
+                         arguments: {
+                             task: "Increment counter",
+                             summary: "Please increment the shared counter"
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 2) {
+                 step3 = 3;
+                 // Sub-agent returned
+                 console.log("Sub-agent result seen by root:", last.content);
+                 return {
+                     content: "Step 3: Read back",
+                     toolCalls: [{
+                         id: 'call_share_3',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const val = await rlm_shared_get('counter');
+                                    return val;
+                                })()
+                             `,
+                             sessionId: 'root-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool' && step3 === 3) {
+                 return { content: `Final Value: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 3" };
+        }
+    });
+
+    const agent3 = new VoltClawAgent({
+        llm: llm3,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent3.start();
+    const result3 = await agent3.query("Test Shared Memory features.");
+    console.log("Result 3:", result3);
+    await agent3.stop();
+
+    // --- Test 4: Structured Output ---
+    console.log("\n--- Test 4: Structured Output ---");
+
+    const llm4 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (systemMsg.includes('OUTPUT REQUIREMENT')) {
+                     const task = systemMsg.match(/Task: (.*)/)?.[1];
+                     if (task === 'Get invalid info') {
+                         return { content: "This is not JSON" };
+                     }
+                     return { content: JSON.stringify({ name: "Alice", age: 30 }) };
+                 }
+                 return { content: "Missing schema instruction" };
+             }
+
+             // Root Agent Logic
+             const last = messages[messages.length - 1];
+             if (last.role === 'user' && last.content?.includes('Structured Output')) {
+                 const isFail = last.content.includes('Fail');
+                 const taskName = isFail ? 'Get invalid info' : 'Get person info';
+
+                 return {
+                     content: "Calling sub-agent with schema...",
+                     toolCalls: [{
+                         id: isFail ? 'call_struct_fail' : 'call_struct',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const schema = { type: 'object', required: ['name', 'age'] };
+                                    try {
+                                        const res = await rlm_call('${taskName}', { schema });
+                                        return res;
+                                    } catch (e) {
+                                        return "Caught error: " + e.message;
+                                    }
+                                })()
+                             `,
+                             sessionId: isFail ? 'struct-session-fail' : 'struct-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool') {
+                 return { content: `Result: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 4" };
+        }
+    });
+
+    const agent4 = new VoltClawAgent({
+        llm: llm4,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent4.start();
+    const result4 = await agent4.query("Test Structured Output.");
+    console.log("Result 4:", result4);
+
+    // Test 4b: Malformed Output
+    const result4b = await agent4.query("Test Structured Output Fail.");
+    console.log("Result 4b:", result4b);
+
+    await agent4.stop();
+
+    // --- Test 5: Atomic Ops & Logging ---
+    console.log("\n--- Test 5: Atomic Ops & Logging ---");
+
+    const llm5 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+             const last = messages[messages.length - 1];
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (last.role === 'user') {
+                     return {
+                         content: "Simulating progress...",
+                         toolCalls: [{
+                             id: 'call_atomic',
+                             name: 'code_exec',
+                             arguments: {
+                                 code: `
+                                    (async () => {
+                                        console.log("Starting atomic test");
+                                        await rlm_shared_increment('global_counter', 5);
+                                        await rlm_shared_push('global_log', 'Item 1');
+                                        console.log("Mid-way progress");
+                                        await rlm_shared_push('global_log', 'Item 2');
+                                        console.log("Finished atomic test");
+                                        return "Done";
+                                    })()
+                                 `,
+                                 sessionId: 'atomic-session'
+                             }
+                         }]
+                     };
+                 }
+                 return { content: "Sub-task completed." };
+             }
+
+             // Root Agent Logic
+             if (last.role === 'user' && last.content?.includes('Atomic')) {
+                 return {
+                     content: "Starting atomic operations test...",
+                     toolCalls: [{
+                         id: 'call_atomic_root',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    await rlm_shared_set('global_counter', 0);
+                                    await rlm_shared_set('global_log', []);
+                                    await rlm_call('Run atomic updates');
+                                    const count = await rlm_shared_get('global_counter');
+                                    const log = await rlm_shared_get('global_log');
+                                    return { count, log };
+                                })()
+                             `,
+                             sessionId: 'root-atomic'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool') {
+                 return { content: `Final Result: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 5" };
+        }
+    });
+
+    const agent5 = new VoltClawAgent({
+        llm: llm5,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools,
+        hooks: {
+            onLog: async (ctx) => {
+                console.log(`[STREAM LOG] ${ctx.level.toUpperCase()} from ${ctx.subId.slice(-8)}: ${ctx.message}`);
+            }
+        }
+    });
+
+    await agent5.start();
+    const result5 = await agent5.query("Test Atomic Ops.");
+    console.log("Result 5:", result5);
+    await agent5.stop();
+
+    // --- Test 6: Functional RLM (Map/Reduce) ---
+    console.log("\n--- Test 6: Functional RLM (Map/Reduce) ---");
+
+    const llm6 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic (Square Number)
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (systemMsg.includes('Task: Square this:')) {
+                     const num = parseInt(systemMsg.match(/Square this: (\d+)/)[1]);
+                     return { content: String(num * num) };
+                 }
+                 if (systemMsg.includes('Task: Sum these:')) {
+                     // Reduce step
+                     const match = systemMsg.match(/Sum these: (\d+) and (\d+)/);
+                     const a = parseInt(match[1]);
+                     const b = parseInt(match[2]);
+                     return { content: String(a + b) };
+                 }
+             }
+
+             // Root Agent Logic
+             if (messages[messages.length - 1].role === 'user') {
+                 return {
+                     content: "Running MapReduce...",
+                     toolCalls: [{
+                         id: 'call_mapreduce',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const items = [1, 2, 3];
+
+                                    // Map: Square
+                                    const squares = await rlm_map(items, item => "Square this: " + item);
+                                    const values = squares.map(r => parseInt(r.result));
+
+                                    // Reduce: Sum
+                                    const sum = await rlm_reduce(values, (acc, item) => ({
+                                        task: "Sum these: " + acc + " and " + item
+                                    }), 0);
+
+                                    return { squares: values, sum: parseInt(sum) };
+                                })()
+                             `,
+                             sessionId: 'functional-session'
+                         }
+                     }]
+                 };
+             }
+
+             return { content: "Done: " + messages[messages.length - 1].content };
+        }
+    });
+
+    const agent6 = new VoltClawAgent({
+        llm: llm6,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent6.start();
+    const result6 = await agent6.query("Run MapReduce");
+    console.log("Result 6:", result6);
+    await agent6.stop();
+
     if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
     console.log("Demo complete.");
 }

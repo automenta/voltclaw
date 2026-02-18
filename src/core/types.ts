@@ -102,6 +102,7 @@ export interface HooksConfig {
   onReply?: (ctx: ReplyContext) => Promise<void>;
   onCall?: (ctx: CallContext) => Promise<void>;
   onError?: (ctx: ErrorContext) => Promise<void>;
+  onLog?: (ctx: LogContext) => Promise<void>;
   onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
   onStart?: () => Promise<void>;
   onStop?: () => Promise<void>;
@@ -139,6 +140,14 @@ export interface ErrorContext {
   timestamp: Date;
 }
 
+export interface LogContext {
+  subId: string;
+  taskId?: string;
+  message: string;
+  level: 'info' | 'error';
+  timestamp: Date;
+}
+
 export type Middleware = (
   ctx: MiddlewareContext,
   next: () => Promise<void>
@@ -171,6 +180,7 @@ export type EventMap = {
   reply: [ReplyContext];
   call: [CallContext];
   error: [ErrorContext];
+  log: [LogContext];
   start: [];
   stop: [];
 };
@@ -352,6 +362,10 @@ export interface MemoryQuery {
 }
 
 export interface Session {
+  id?: string;
+  parentId?: string;
+  rootId?: string;
+  sharedData?: Record<string, unknown>;
   history: ChatMessage[];
   callCount: number;
   estCostUSD: number;
@@ -364,6 +378,7 @@ export interface Session {
 export interface SubTaskInfo {
   createdAt: number;
   task: string;
+  schema?: Record<string, unknown> | string;
   arrived: boolean;
   result?: string;
   error?: string;

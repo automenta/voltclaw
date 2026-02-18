@@ -36,6 +36,7 @@ import type {
   ReplyContext,
   CallContext,
   ErrorContext,
+  LogContext,
   QueryOptions,
   Unsubscribe,
   Session,
@@ -105,6 +106,7 @@ export class VoltClawAgent {
     onReply?: (ctx: ReplyContext) => Promise<void>;
     onCall?: (ctx: CallContext) => Promise<void>;
     onError?: (ctx: ErrorContext) => Promise<void>;
+    onLog?: (ctx: LogContext) => Promise<void>;
     onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
     onStart?: () => Promise<void>;
     onStop?: () => Promise<void>;
@@ -420,12 +422,20 @@ export class VoltClawAgent {
     return this.executeTool(name, args, session, this.channel.identity.publicKey);
   }
 
+  public getStore(): Store {
+    return this.store;
+  }
+
   async query(message: string, _options?: QueryOptions): Promise<string> {
     const session = this.store.get('self', true);
 
     // Ensure we start with a clean state for one-shot if needed, or handle session logic better
     // For now, simple append
     if (session.depth === undefined) session.depth = 0;
+
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
 
     session.history.push({ role: 'user', content: message });
     
@@ -489,6 +499,10 @@ export class VoltClawAgent {
     const session = this.store.get('self', true);
 
     if (session.depth === undefined) session.depth = 0;
+
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
 
     session.history.push({ role: 'user', content: message });
 
@@ -634,6 +648,16 @@ export class VoltClawAgent {
             // We can't rely on pubkey for internal sessions (subtask:...).
         }
         await this.handleSubtaskResult(targetSession, parsed, from);
+      } else if (parsed?.type === 'subtask_log') {
+        const logCtx: LogContext = {
+          subId: parsed.subId as string,
+          taskId: parsed.taskId as string,
+          message: parsed.message as string,
+          level: (parsed.level as 'info' | 'error') ?? 'info',
+          timestamp: new Date()
+        };
+        await this.hooks.onLog?.(logCtx);
+        this.emit('log', logCtx);
       } else {
         await this.handleTopLevel(session, content, from);
       }
@@ -663,6 +687,9 @@ export class VoltClawAgent {
     from: string
   ): Promise<void> {
     session.depth = 0;
+    session.rootId = session.id;
+    session.parentId = undefined;
+    if (!session.sharedData) session.sharedData = {};
     session.subTasks = {};
     session.callCount = 0;
     session.estCostUSD = 0;
@@ -729,10 +756,15 @@ export class VoltClawAgent {
     const depth = (parsed.depth as number) ?? session.depth + 1;
     const task = parsed.task as string;
     const contextSummary = (parsed.contextSummary as string) ?? '';
+    const schema = parsed.schema as Record<string, unknown> | string | undefined;
     const subId = parsed.subId as string;
     const parentPubkey = parsed.parentPubkey as string | undefined;
+    const rootId = parsed.rootId as string | undefined;
+    const parentId = parsed.parentId as string | undefined;
 
     session.depth = depth;
+    session.rootId = rootId;
+    session.parentId = parentId;
 
     const mustFinish = depth >= this.maxDepth - 1
       ? '\nMUST produce final concise answer NOW. No further calls.'
@@ -751,9 +783,15 @@ export class VoltClawAgent {
       contextInstruction = `\n\n[IMPORTANT] Large context is stored in memory (ID: ${memoryMatch[1]}). Use 'memory_recall' to access it.`;
     }
 
+    let schemaInstruction = '';
+    if (schema) {
+        const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema, null, 2);
+        schemaInstruction = `\n\nOUTPUT REQUIREMENT:\nYou MUST produce a valid JSON object matching this schema:\n${schemaStr}\n\nDo not wrap the JSON in markdown code blocks. Just raw JSON.`;
+    }
+
     const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
 Task: ${task}
-Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
+Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${mustFinish}`;
 
     // Initialize session state for subtask
     session.depth = depth;
@@ -865,6 +903,20 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
       sub.reject?.(new Error(sub.error));
     } else {
       sub.result = parsed.result as string;
+
+      // Validate schema if one was requested
+      if (sub.schema && sub.result) {
+          try {
+              JSON.parse(sub.result);
+          } catch (e) {
+              const err = e instanceof Error ? e : new Error(String(e));
+              sub.result = undefined;
+              sub.error = `Sub-agent output failed validation: ${err.message}. Output was: ${sub.result}`;
+              sub.reject?.(new Error(sub.error));
+              return;
+          }
+      }
+
       const addedTokens = Math.ceil((sub.result?.length ?? 0) / 4);
       session.actualTokensUsed += addedTokens;
       session.estCostUSD += (addedTokens / 1000) * 0.0005;
@@ -976,6 +1028,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
   ): Promise<ToolCallResult> {
     const task = args.task as string;
     const summary = args.summary as string | undefined;
+    const schema = args.schema as Record<string, unknown> | string | undefined;
     const depth = session.depth + 1;
 
     if (depth > this.maxDepth) {
@@ -1000,6 +1053,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
     session.subTasks[subId] = {
       createdAt: Date.now(),
       task,
+      schema,
       arrived: false,
       resolve: undefined,
       reject: undefined
@@ -1010,7 +1064,10 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
       subId,
       task,
       contextSummary: summary ?? '',
-      depth
+      schema,
+      depth,
+      rootId: session.rootId,
+      parentId: session.id
     });
 
     await this.channel.send(this.channel.identity.publicKey, payload);
@@ -1033,7 +1090,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
     session: Session,
     from: string
   ): Promise<ToolCallResult> {
-    const tasks = args.tasks as Array<{ task: string; summary?: string }>;
+    const tasks = args.tasks as Array<{ task: string; summary?: string; schema?: Record<string, unknown> }>;
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { error: 'Invalid tasks argument' };
@@ -1078,6 +1135,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
       session.subTasks[subId] = {
         createdAt: Date.now(),
         task: t.task,
+        schema: t.schema,
         arrived: false,
         resolve: undefined,
         reject: undefined
@@ -1089,7 +1147,10 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
         subId,
         task: t.task,
         contextSummary: t.summary ?? '',
-        depth
+        schema: t.schema,
+        depth,
+        rootId: session.rootId,
+        parentId: session.id
       });
 
       await this.channel.send(this.channel.identity.publicKey, payload);
@@ -1168,6 +1229,8 @@ RLM ENVIRONMENT:
 - You have a persistent JavaScript sandbox via 'code_exec'.
 - Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
 - Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
+- Use 'rlm_shared_set(key, value)' and 'rlm_shared_get(key)' to access shared memory across the recursion tree.
+- Use 'rlm_trace()' to inspect the call stack.
 - Use 'load_context(id)' to retrieve specific memories by ID.
 - Console logs (console.log) are captured and returned to you for debugging.
 `;
