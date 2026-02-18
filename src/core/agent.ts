@@ -899,6 +899,20 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
       sub.reject?.(new Error(sub.error));
     } else {
       sub.result = parsed.result as string;
+
+      // Validate schema if one was requested
+      if (sub.schema && sub.result) {
+          try {
+              JSON.parse(sub.result);
+          } catch (e) {
+              const err = e instanceof Error ? e : new Error(String(e));
+              sub.result = undefined;
+              sub.error = `Sub-agent output failed validation: ${err.message}. Output was: ${sub.result}`;
+              sub.reject?.(new Error(sub.error));
+              return;
+          }
+      }
+
       const addedTokens = Math.ceil((sub.result?.length ?? 0) / 4);
       session.actualTokensUsed += addedTokens;
       session.estCostUSD += (addedTokens / 1000) * 0.0005;
@@ -1035,6 +1049,7 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
     session.subTasks[subId] = {
       createdAt: Date.now(),
       task,
+      schema,
       arrived: false,
       resolve: undefined,
       reject: undefined
@@ -1116,6 +1131,7 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
       session.subTasks[subId] = {
         createdAt: Date.now(),
         task: t.task,
+        schema: t.schema,
         arrived: false,
         resolve: undefined,
         reject: undefined

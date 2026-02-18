@@ -311,6 +311,10 @@ async function runDemo() {
              // Sub-agent Logic
              if (systemMsg.includes('FOCUSED sub-agent')) {
                  if (systemMsg.includes('OUTPUT REQUIREMENT')) {
+                     const task = systemMsg.match(/Task: (.*)/)?.[1];
+                     if (task === 'Get invalid info') {
+                         return { content: "This is not JSON" };
+                     }
                      return { content: JSON.stringify({ name: "Alice", age: 30 }) };
                  }
                  return { content: "Missing schema instruction" };
@@ -319,20 +323,27 @@ async function runDemo() {
              // Root Agent Logic
              const last = messages[messages.length - 1];
              if (last.role === 'user' && last.content?.includes('Structured Output')) {
+                 const isFail = last.content.includes('Fail');
+                 const taskName = isFail ? 'Get invalid info' : 'Get person info';
+
                  return {
                      content: "Calling sub-agent with schema...",
                      toolCalls: [{
-                         id: 'call_struct',
+                         id: isFail ? 'call_struct_fail' : 'call_struct',
                          name: 'code_exec',
                          arguments: {
                              code: `
                                 (async () => {
                                     const schema = { type: 'object', required: ['name', 'age'] };
-                                    const res = await rlm_call('Get person info', { schema });
-                                    return res;
+                                    try {
+                                        const res = await rlm_call('${taskName}', { schema });
+                                        return res;
+                                    } catch (e) {
+                                        return "Caught error: " + e.message;
+                                    }
                                 })()
                              `,
-                             sessionId: 'struct-session'
+                             sessionId: isFail ? 'struct-session-fail' : 'struct-session'
                          }
                      }]
                  };
@@ -356,6 +367,11 @@ async function runDemo() {
     await agent4.start();
     const result4 = await agent4.query("Test Structured Output.");
     console.log("Result 4:", result4);
+
+    // Test 4b: Malformed Output
+    const result4b = await agent4.query("Test Structured Output Fail.");
+    console.log("Result 4b:", result4b);
+
     await agent4.stop();
 
     // --- Test 5: Atomic Ops & Logging ---

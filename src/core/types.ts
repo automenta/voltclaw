@@ -378,6 +378,7 @@ export interface Session {
 export interface SubTaskInfo {
   createdAt: number;
   task: string;
+  schema?: Record<string, unknown> | string;
   arrived: boolean;
   result?: string;
   error?: string;
