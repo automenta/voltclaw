@@ -4,6 +4,7 @@ export interface CallToolConfig {
   onCall: (args: {
     task: string;
     summary?: string;
+    schema?: Record<string, unknown> | string;
     depth: number;
   }) => Promise<ToolCallResult>;
   currentDepth: number;
@@ -24,6 +25,11 @@ export function createCallTool(config: CallToolConfig): Tool {
         summary: {
           type: 'string',
           description: 'Optional context summary for the child agent'
+        },
+        schema: {
+          type: 'object',
+          description: 'Optional JSON schema or description of the required output structure',
+          properties: {} // Allow any object
         }
       },
       required: ['task']
@@ -33,6 +39,7 @@ export function createCallTool(config: CallToolConfig): Tool {
     execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
       const task = String(args['task'] ?? '');
       const summary = args['summary'] !== undefined ? String(args['summary']) : undefined;
+      const schema = args['schema'] as Record<string, unknown> | string | undefined;
 
       if (!task) {
         return { error: 'Task is required for call' };
@@ -41,6 +48,7 @@ export function createCallTool(config: CallToolConfig): Tool {
       return config.onCall({
         task,
         summary,
+        schema,
         depth: config.currentDepth + 1
       });
     }
@@ -60,7 +68,8 @@ export function createCallParallelTool(config: CallToolConfig): Tool {
             type: 'object',
             properties: {
               task: { type: 'string' },
-              summary: { type: 'string' }
+              summary: { type: 'string' },
+              schema: { type: 'object', description: 'Optional JSON schema' }
             },
             required: ['task']
           },

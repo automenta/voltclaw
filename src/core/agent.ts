@@ -740,6 +740,7 @@ export class VoltClawAgent {
     const depth = (parsed.depth as number) ?? session.depth + 1;
     const task = parsed.task as string;
     const contextSummary = (parsed.contextSummary as string) ?? '';
+    const schema = parsed.schema as Record<string, unknown> | string | undefined;
     const subId = parsed.subId as string;
     const parentPubkey = parsed.parentPubkey as string | undefined;
     const rootId = parsed.rootId as string | undefined;
@@ -766,9 +767,15 @@ export class VoltClawAgent {
       contextInstruction = `\n\n[IMPORTANT] Large context is stored in memory (ID: ${memoryMatch[1]}). Use 'memory_recall' to access it.`;
     }
 
+    let schemaInstruction = '';
+    if (schema) {
+        const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema, null, 2);
+        schemaInstruction = `\n\nOUTPUT REQUIREMENT:\nYou MUST produce a valid JSON object matching this schema:\n${schemaStr}\n\nDo not wrap the JSON in markdown code blocks. Just raw JSON.`;
+    }
+
     const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
 Task: ${task}
-Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
+Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${mustFinish}`;
 
     // Initialize session state for subtask
     session.depth = depth;
@@ -991,6 +998,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
   ): Promise<ToolCallResult> {
     const task = args.task as string;
     const summary = args.summary as string | undefined;
+    const schema = args.schema as Record<string, unknown> | string | undefined;
     const depth = session.depth + 1;
 
     if (depth > this.maxDepth) {
@@ -1025,6 +1033,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
       subId,
       task,
       contextSummary: summary ?? '',
+      schema,
       depth,
       rootId: session.rootId,
       parentId: session.id
@@ -1050,7 +1059,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
     session: Session,
     from: string
   ): Promise<ToolCallResult> {
-    const tasks = args.tasks as Array<{ task: string; summary?: string }>;
+    const tasks = args.tasks as Array<{ task: string; summary?: string; schema?: Record<string, unknown> }>;
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { error: 'Invalid tasks argument' };
@@ -1106,6 +1115,7 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
         subId,
         task: t.task,
         contextSummary: t.summary ?? '',
+        schema: t.schema,
         depth,
         rootId: session.rootId,
         parentId: session.id

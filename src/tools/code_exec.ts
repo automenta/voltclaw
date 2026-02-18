@@ -229,7 +229,17 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         };
 
         // Define rlm_call separately to capture 'ctxObj' (which becomes 'ctx')
-        ctxObj.rlm_call = async (subtask: string, keys: string[] = contextKeys) => {
+        ctxObj.rlm_call = async (subtask: string, keysOrOptions: string[] | { contextKeys?: string[], schema?: any } = contextKeys) => {
+            let keys: string[] = [];
+            let schema: any = undefined;
+
+            if (Array.isArray(keysOrOptions)) {
+                keys = keysOrOptions;
+            } else if (typeof keysOrOptions === 'object') {
+                keys = keysOrOptions.contextKeys || [];
+                schema = keysOrOptions.schema;
+            }
+
             let summary = '';
             if (keys && keys.length > 0) {
                const extracted: Record<string, any> = {};
@@ -260,7 +270,8 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
 
             const callPromise = agent.executeTool('call', {
               task: subtask,
-              summary
+              summary,
+              schema
             }, session, from || 'unknown');
 
             // Timeout logic
@@ -281,7 +292,7 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
             }
         };
 
-        ctxObj.rlm_call_parallel = async (tasks: Array<{ task: string, summary?: string }>) => {
+        ctxObj.rlm_call_parallel = async (tasks: Array<{ task: string, summary?: string, schema?: any }>) => {
              const callPromise = agent.executeTool('call_parallel', {
                   tasks
              }, session, from || 'unknown');

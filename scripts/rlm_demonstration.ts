@@ -301,6 +301,63 @@ async function runDemo() {
     console.log("Result 3:", result3);
     await agent3.stop();
 
+    // --- Test 4: Structured Output ---
+    console.log("\n--- Test 4: Structured Output ---");
+
+    const llm4 = new MockLLM({
+        handler: async (messages) => {
+             const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+
+             // Sub-agent Logic
+             if (systemMsg.includes('FOCUSED sub-agent')) {
+                 if (systemMsg.includes('OUTPUT REQUIREMENT')) {
+                     return { content: JSON.stringify({ name: "Alice", age: 30 }) };
+                 }
+                 return { content: "Missing schema instruction" };
+             }
+
+             // Root Agent Logic
+             const last = messages[messages.length - 1];
+             if (last.role === 'user' && last.content?.includes('Structured Output')) {
+                 return {
+                     content: "Calling sub-agent with schema...",
+                     toolCalls: [{
+                         id: 'call_struct',
+                         name: 'code_exec',
+                         arguments: {
+                             code: `
+                                (async () => {
+                                    const schema = { type: 'object', required: ['name', 'age'] };
+                                    const res = await rlm_call('Get person info', { schema });
+                                    return res;
+                                })()
+                             `,
+                             sessionId: 'struct-session'
+                         }
+                     }]
+                 };
+             }
+
+             if (last.role === 'tool') {
+                 return { content: `Result: ${last.content}` };
+             }
+
+             return { content: "Unexpected step in Test 4" };
+        }
+    });
+
+    const agent4 = new VoltClawAgent({
+        llm: llm4,
+        channel: new MockChannel(),
+        persistence: new FileStore({ path: storePath }),
+        tools
+    });
+
+    await agent4.start();
+    const result4 = await agent4.query("Test Structured Output.");
+    console.log("Result 4:", result4);
+    await agent4.stop();
+
     if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
     console.log("Demo complete.");
 }
