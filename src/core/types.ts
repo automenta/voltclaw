@@ -332,6 +332,7 @@ export interface MemoryEntry {
   tags?: string[];
   importance?: number;
   timestamp: number;
+  expiresAt?: number;
   contextId?: string;
   metadata?: Record<string, unknown>;
 }

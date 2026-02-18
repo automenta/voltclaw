@@ -44,6 +44,7 @@ export class SQLiteStore implements Store {
         tags TEXT, -- JSON array
         importance INTEGER,
         timestamp INTEGER NOT NULL,
+        expires_at INTEGER,
         context_id TEXT,
         metadata TEXT -- JSON object
       );
@@ -102,6 +103,12 @@ export class SQLiteStore implements Store {
       // Ignore if column already exists
     }
 
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN expires_at INTEGER');
+    } catch {
+      // Ignore if column already exists
+    }
+
     const rows = await this.db.all('SELECT key, data FROM sessions');
     for (const row of rows) {
       try {
@@ -142,8 +149,13 @@ export class SQLiteStore implements Store {
         updated_at = excluded.updated_at
     `);
 
+    const replacer = (_key: string, value: any) => {
+      if (_key === 'timer' || _key === 'resolve' || _key === 'reject') return undefined;
+      return value;
+    };
+
     for (const [key, session] of this.cache.entries()) {
-      await stmt.run(key, JSON.stringify(session), Date.now());
+      await stmt.run(key, JSON.stringify(session, replacer), Date.now());
     }
     await stmt.finalize();
   }
@@ -159,8 +171,8 @@ export class SQLiteStore implements Store {
     const timestamp = Date.now();
 
     await this.db!.run(
-      `INSERT INTO memories (id, type, level, last_access, content, embedding, tags, importance, timestamp, context_id, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memories (id, type, level, last_access, content, embedding, tags, importance, timestamp, expires_at, context_id, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       entry.type,
       entry.level ?? 1,
@@ -170,6 +182,7 @@ export class SQLiteStore implements Store {
       JSON.stringify(entry.tags ?? []),
       entry.importance ?? 0,
       timestamp,
+      entry.expiresAt ?? null,
       entry.contextId ?? null,
       JSON.stringify(entry.metadata ?? {})
     );
@@ -184,8 +197,9 @@ export class SQLiteStore implements Store {
     const params: unknown[] = [];
 
     if (query.id) {
-      sql += ' AND (id = ? OR context_id = ?)';
-      params.push(query.id, query.id);
+      // Find the specific memory, OR any memory belonging to the same context (chunk set)
+      sql += ' AND (id = ? OR context_id = ? OR context_id IN (SELECT context_id FROM memories WHERE id = ?))';
+      params.push(query.id, query.id, query.id);
     }
 
     if (query.type) {
@@ -254,6 +268,7 @@ export class SQLiteStore implements Store {
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,
+      expiresAt: row.expires_at,
       contextId: row.context_id,
       metadata: JSON.parse(row.metadata || '{}')
     }));
@@ -342,6 +357,9 @@ export class SQLiteStore implements Store {
     const sevenDays = 7 * oneDay;
     const thirtyDays = 30 * oneDay;
     const ninetyDays = 90 * oneDay;
+
+    // Delete expired memories
+    await this.db!.run('DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?', now);
 
     // Level 1 (Recent) -> Level 2 (Working) if older than 24h
     await this.db!.run(

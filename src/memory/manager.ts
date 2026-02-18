@@ -15,16 +15,20 @@ export class MemoryManager {
     type: MemoryEntry['type'] = 'working',
     tags: string[] = [],
     importance: number = 1,
-    level: number = 1
+    level: number = 1,
+    ttl?: number,
+    chunkOptions: { size?: number; overlap?: number } = {}
   ): Promise<string> {
     if (!this.store.createMemory) {
       throw new Error('Store does not support memory operations');
     }
 
-    const chunks = this.chunkText(content);
+    const chunks = this.chunkText(content, chunkOptions.size, chunkOptions.overlap);
+    const now = Date.now();
+    const expiresAt = ttl ? now + ttl : undefined;
 
     if (chunks.length <= 1) {
-      return this.createSingleMemory(chunks[0] || content, type, tags, importance, level);
+      return this.createSingleMemory(chunks[0] || content, type, tags, importance, level, expiresAt);
     }
 
     const contextId = randomUUID();
@@ -47,7 +51,8 @@ export class MemoryManager {
         importance,
         embedding,
         level,
-        lastAccess: Date.now(),
+        lastAccess: now,
+        expiresAt,
         contextId,
         metadata: {
           chunkIndex: index,
@@ -65,7 +70,8 @@ export class MemoryManager {
     type: MemoryEntry['type'],
     tags: string[],
     importance: number,
-    level: number
+    level: number,
+    expiresAt?: number
   ): Promise<string> {
     let embedding: number[] | undefined;
     if (this.llm?.embed) {
@@ -83,7 +89,8 @@ export class MemoryManager {
       importance,
       embedding,
       level,
-      lastAccess: Date.now()
+      lastAccess: Date.now(),
+      expiresAt
     });
   }
 

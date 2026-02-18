@@ -139,6 +139,37 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
              return null;
         };
 
+        // Helper to resolve RLM references
+        const resolveRLMRef = async (result: any) => {
+              let output = result;
+              // Transparently resolve RLM Reference
+              if (typeof output === 'string' && output.startsWith('[RLM_REF:') && agent.memory) {
+                   const refId = output.slice(9, -1);
+                   try {
+                       const entries = await agent.memory.recall({ id: refId });
+                       if (entries && entries.length > 0) {
+                           entries.sort((a, b) => {
+                               const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+                               const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+                               return idxA - idxB;
+                           });
+                           output = entries.map(e => e.content).join('');
+                       }
+                   } catch (e) {
+                       // ignore
+                   }
+              }
+
+              if (typeof output === 'string') {
+                  try {
+                     return JSON.parse(output);
+                  } catch {
+                     return output;
+                  }
+              }
+              return output;
+        };
+
         // Define rlm_call separately to capture 'ctxObj' (which becomes 'ctx')
         ctxObj.rlm_call = async (subtask: string, keys: string[] = contextKeys) => {
             let summary = '';
@@ -184,37 +215,42 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
               const result: any = await Promise.race([callPromise, timeoutPromise]);
               clearTimeout(timeoutId!);
 
-              let output = result?.result; // result from ToolCallResult
-
-              // Transparently resolve RLM Reference
-              if (typeof output === 'string' && output.startsWith('[RLM_REF:') && agent.memory) {
-                   const refId = output.slice(9, -1);
-                   try {
-                       const entries = await agent.memory.recall({ id: refId });
-                       if (entries && entries.length > 0) {
-                           entries.sort((a, b) => {
-                               const idxA = (a.metadata as any)?.chunkIndex ?? 0;
-                               const idxB = (b.metadata as any)?.chunkIndex ?? 0;
-                               return idxA - idxB;
-                           });
-                           output = entries.map(e => e.content).join('');
-                       }
-                   } catch (e) {
-                       // ignore
-                   }
-              }
-
-              if (typeof output === 'string') {
-                  try {
-                     return JSON.parse(output);
-                  } catch {
-                     return output;
-                  }
-              }
-              return result;
+              return resolveRLMRef(result?.result);
             } catch (e) {
                clearTimeout(timeoutId!);
                throw e; // Propagate error
+            }
+        };
+
+        ctxObj.rlm_call_parallel = async (tasks: Array<{ task: string, summary?: string }>) => {
+             const callPromise = agent.executeTool('call_parallel', {
+                  tasks
+             }, session, from || 'unknown');
+
+             // Timeout logic
+            let timeoutId: NodeJS.Timeout;
+            const timeoutPromise = new Promise((_, reject) => {
+               timeoutId = setTimeout(() => reject(new Error(`rlm_call_parallel timed out after ${RLM_CALL_TIMEOUT_MS}ms`)), RLM_CALL_TIMEOUT_MS);
+            });
+
+            try {
+               const result: any = await Promise.race([callPromise, timeoutPromise]);
+               clearTimeout(timeoutId!);
+
+               if (result.status === 'completed' && Array.isArray(result.results)) {
+                   // Resolve all results
+                   const resolved = await Promise.all(result.results.map(async (r: any) => {
+                       return {
+                           ...r,
+                           result: await resolveRLMRef(r.result)
+                       };
+                   }));
+                   return resolved;
+               }
+               return result;
+            } catch (e) {
+               clearTimeout(timeoutId!);
+               throw e;
             }
         };
 

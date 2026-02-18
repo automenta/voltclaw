@@ -190,7 +190,7 @@ export class VoltClawAgent {
       if (options.rlm) {
           // Inherit agent timeout if not specified in RLM config
           const rlmConfig = {
-              rlmTimeoutMs: options.rlm.rlmTimeoutMs ?? options.call?.timeoutMs,
+              rlmTimeoutMs: options.call?.timeoutMs,
               ...options.rlm
           };
           this.registerTools([createCodeExecTool(rlmConfig)]);
@@ -803,7 +803,10 @@ Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
                 result,
                 'working',
                 ['rlm_result', `subtask:${subId}`],
-                5 // Medium importance
+                5, // Medium importance
+                1, // Level 1 (Recent)
+                3600000, // TTL: 1 hour
+                { overlap: 0 } // No overlap for clean reassembly
             );
             result = `[RLM_REF:${memId}]`;
           } catch (e) {
