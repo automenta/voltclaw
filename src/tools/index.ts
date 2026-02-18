@@ -11,6 +11,7 @@ import { editTool } from './edit.js';
 import { executeTool } from './execute.js';
 import { createAllTools } from './loader.js';
 import { createGraphTools } from './graph.js';
+import { createSelfTestTool } from './self-test.js';
 
 export { ToolRegistry, type ToolExecutor };
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParameterProperty };
@@ -20,7 +21,7 @@ export { httpGetTool, httpPostTool };
 export { readFileTool, writeFileTool, listFilesTool };
 export { restartTool };
 export { grepTool, globTool, editTool, executeTool };
-export { createAllTools, createGraphTools };
+export { createAllTools, createGraphTools, createSelfTestTool };
 
 export function createBuiltinTools(): Tool[] {
   return [
