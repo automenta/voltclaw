@@ -125,4 +125,42 @@ describe('SQLiteStore Integration', () => {
     const exported = await store.exportMemories!();
     expect(exported).toHaveLength(2);
   });
+
+  it('should store and search by embedding (vector similarity)', async () => {
+    const store = new SQLiteStore({ path: dbPath });
+    await store.load();
+
+    // Vector A: [1, 0] (x-axis)
+    await store.createMemory({
+      content: 'vector A',
+      type: 'working',
+      embedding: [1, 0]
+    });
+
+    // Vector B: [0, 1] (y-axis) - Orthogonal to A, similarity 0
+    await store.createMemory({
+      content: 'vector B',
+      type: 'working',
+      embedding: [0, 1]
+    });
+
+    // Vector C: [0.9, 0.1] - Close to A
+    await store.createMemory({
+      content: 'vector C',
+      type: 'working',
+      embedding: [0.9, 0.1]
+    });
+
+    // Search near Vector A [1, 0]
+    const results = await store.searchMemories!({ embedding: [1, 0], limit: 2 });
+
+    expect(results).toHaveLength(2);
+    expect(results[0].content).toBe('vector A'); // Exact match, sim 1.0
+    expect(results[1].content).toBe('vector C'); // Close match
+
+    // Check that similarity was computed correctly (implicitly via order)
+    // A: 1.0
+    // C: ~0.99
+    // B: 0.0
+  });
 });

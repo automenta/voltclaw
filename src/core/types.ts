@@ -185,6 +185,7 @@ export interface LLMProvider {
   readonly supportsTools?: boolean;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
   stream?(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk>;
+  embed?(text: string): Promise<number[]>;
   countTokens?(text: string): number;
 }
 
@@ -253,23 +254,37 @@ export interface Store {
   removeMemory?(id: string): Promise<void>;
   exportMemories?(): Promise<MemoryEntry[]>;
   consolidateMemories?(): Promise<void>;
+  updateMemoryLevel?(id: string, level: number): Promise<void>;
+}
+
+export enum MemoryLevel {
+  Active = 0,
+  Recent = 1,
+  Working = 2,
+  LongTerm = 3,
+  Archived = 4
 }
 
 export interface MemoryEntry {
   id: string;
   type: 'working' | 'long_term' | 'episodic';
+  level?: MemoryLevel;
   content: string;
+  embedding?: number[];
   tags?: string[];
   importance?: number;
   timestamp: number;
+  lastAccess?: number;
   contextId?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface MemoryQuery {
   type?: MemoryEntry['type'];
+  level?: MemoryLevel;
   tags?: string[];
   content?: string; // Simple text search
+  embedding?: number[]; // Vector search
   limit?: number;
 }
 

@@ -257,4 +257,27 @@ export class OpenAIProvider extends BaseLLMProvider {
       arguments: JSON.parse(tc.function.arguments)
     };
   }
+
+  async embed(text: string): Promise<number[]> {
+    const body: Record<string, unknown> = {
+      model: this.model.startsWith('gpt-') ? 'text-embedding-3-small' : this.model,
+      input: text
+    };
+
+    const response = await fetch(`${this.baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        throw new Error(`OpenAI embedding error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json() as { data: [{ embedding: number[] }] };
+    return data.data[0].embedding;
+  }
 }
