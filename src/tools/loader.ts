@@ -3,13 +3,14 @@ import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { TOOLS_DIR } from '../core/bootstrap.js';
 import type { Tool } from './types.js';
+import type { CodeExecConfig } from './code_exec.js';
 
 import { timeTool, dateTool, sleepTool } from './time.js';
 import { estimateTokensTool } from './call.js';
 import { httpGetTool, httpPostTool } from './http.js';
 import { readFileTool, writeFileTool, listFilesTool } from './files.js';
 import { restartTool } from './restart.js';
-import { codeExecTool } from './code_exec.js';
+import { createCodeExecTool } from './code_exec.js';
 
 async function loadUserTools(): Promise<Tool[]> {
   const tools: Tool[] = [];
@@ -37,7 +38,7 @@ async function loadUserTools(): Promise<Tool[]> {
   return tools;
 }
 
-export function createBuiltinTools(): Tool[] {
+export function createBuiltinTools(config?: { rlm?: CodeExecConfig }): Tool[] {
   return [
     timeTool,
     dateTool,
@@ -49,12 +50,12 @@ export function createBuiltinTools(): Tool[] {
     writeFileTool,
     listFilesTool,
     restartTool,
-    codeExecTool
+    createCodeExecTool(config?.rlm)
   ];
 }
 
-export async function createAllTools(): Promise<Tool[]> {
-    const builtins = createBuiltinTools();
+export async function createAllTools(config?: { rlm?: CodeExecConfig }): Promise<Tool[]> {
+    const builtins = createBuiltinTools(config);
     const userTools = await loadUserTools();
     return [...builtins, ...userTools];
 }

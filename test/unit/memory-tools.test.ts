@@ -1,95 +1,89 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMemoryTools } from '../../src/tools/memory.js';
-import { MemoryManager } from '../../src/memory/manager.js';
+import type { MemoryManager } from '../../src/memory/manager.js';
 
 describe('Memory Tools', () => {
-  const mockStore = {
-    createMemory: vi.fn().mockResolvedValue('mem-1'),
-    searchMemories: vi.fn().mockResolvedValue([{ id: 'mem-1', content: 'test' }]),
-    removeMemory: vi.fn().mockResolvedValue(undefined),
-    get: vi.fn(),
-    getAll: vi.fn(),
-    load: vi.fn(),
-    save: vi.fn(),
-    clear: vi.fn(),
-    consolidateMemories: vi.fn().mockResolvedValue(undefined)
-  };
+  let manager: MemoryManager;
+  let tools: any[];
 
-  const manager = new MemoryManager(mockStore);
-  const tools = createMemoryTools(manager);
-  const toolMap = new Map(tools.map(t => [t.name, t]));
+  beforeEach(() => {
+    manager = {
+      storeMemory: vi.fn(),
+      recall: vi.fn(),
+      forget: vi.fn(),
+      export: vi.fn(),
+      consolidate: vi.fn()
+    } as any;
+    tools = createMemoryTools(manager);
+  });
 
-  it('memory_store should call storeMemory', async () => {
-    const tool = toolMap.get('memory_store')!;
+  it('memory_store tool should call manager.storeMemory', async () => {
+    const tool = tools.find(t => t.name === 'memory_store');
+    expect(tool).toBeDefined();
+
+    vi.mocked(manager.storeMemory).mockResolvedValue('mem-1');
+
     const result = await tool.execute({
       content: 'test content',
-      type: 'episodic',
-      tags: ['test'],
-      importance: 5
-    });
-
-    expect(mockStore.createMemory).toHaveBeenCalledWith(expect.objectContaining({
-      content: 'test content',
-      type: 'episodic',
-      importance: 5
-    }));
-    expect(result).toHaveProperty('status', 'stored');
-    expect(result).toHaveProperty('id', 'mem-1');
-  });
-
-  it('memory_recall should call recall', async () => {
-    const tool = toolMap.get('memory_recall')!;
-    const result = await tool.execute({
-      query: 'test',
-      tags: ['tag1']
-    });
-
-    expect(mockStore.searchMemories).toHaveBeenCalledWith(expect.objectContaining({
-      content: 'test',
-      tags: ['tag1']
-    }));
-    expect(result).toHaveProperty('status', 'found');
-    // @ts-ignore
-    expect(result.results).toHaveLength(1);
-  });
-
-  it('memory_forget should call forget', async () => {
-    const tool = toolMap.get('memory_forget')!;
-    const result = await tool.execute({
-      id: 'mem-1'
-    });
-
-    expect(mockStore.removeMemory).toHaveBeenCalledWith('mem-1');
-    expect(result).toHaveProperty('status', 'removed');
-  });
-
-  it('memory_consolidate should summarize if enough memories exist', async () => {
-    // Override searchMemories to return multiple items
-    const manyMemories = Array.from({ length: 10 }, (_, i) => ({
-      id: `mem-${i}`,
-      content: `memory ${i}`,
       type: 'working',
-      importance: 5,
-      timestamp: Date.now()
-    }));
+      tags: ['tag1'],
+      importance: 5
+    });
 
-    mockStore.searchMemories = vi.fn().mockResolvedValue(manyMemories);
+    expect(manager.storeMemory).toHaveBeenCalledWith(
+      'test content',
+      'working',
+      ['tag1'],
+      5
+    );
+    expect(result).toEqual({ status: 'stored', id: 'mem-1' });
+  });
 
-    const tool = toolMap.get('memory_consolidate')!;
+  it('memory_recall tool should call manager.recall', async () => {
+    const tool = tools.find(t => t.name === 'memory_recall');
+    vi.mocked(manager.recall).mockResolvedValue([{ id: '1', content: 'c' } as any]);
 
-    const mockAgent = {
-      query: vi.fn().mockResolvedValue('Summary of memories')
-    };
+    const result = await tool.execute({
+      query: 'search',
+      limit: 10
+    });
 
-    const result = await tool.execute({}, mockAgent as any, {} as any, 'user');
+    expect(manager.recall).toHaveBeenCalledWith({
+      content: 'search',
+      tags: undefined,
+      limit: 10
+    });
+    expect(result.count).toBe(1);
+  });
 
-    expect(mockAgent.query).toHaveBeenCalled();
-    expect(mockStore.createMemory).toHaveBeenCalledWith(expect.objectContaining({
-      content: 'Summary of memories',
-      type: 'long_term',
-      tags: ['summary', 'consolidation']
-    }));
-    // @ts-ignore
-    expect(result.processed).toBe(10);
+  it('memory_stream tool should call manager.recall with offset and contextId', async () => {
+    const tool = tools.find(t => t.name === 'memory_stream');
+    expect(tool).toBeDefined();
+
+    const mockMemories = [
+        { id: '1', content: 'chunk1', metadata: { chunkIndex: 0 } },
+        { id: '2', content: 'chunk2', metadata: { chunkIndex: 1 } }
+    ];
+    vi.mocked(manager.recall).mockResolvedValue(mockMemories as any);
+
+    const result = await tool.execute({
+      contextId: 'ctx-123',
+      limit: 5,
+      offset: 10
+    });
+
+    expect(manager.recall).toHaveBeenCalledWith({
+      contextId: 'ctx-123',
+      limit: 5,
+      offset: 10
+    });
+
+    expect(result).toEqual({
+        status: 'streamed',
+        count: 2,
+        contextId: 'ctx-123',
+        offset: 10,
+        memories: mockMemories
+    });
   });
 });

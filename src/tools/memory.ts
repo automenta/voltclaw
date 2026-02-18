@@ -75,6 +75,45 @@ export function createMemoryTools(manager: MemoryManager): Tool[] {
       }
     },
     {
+      name: 'memory_stream',
+      description: 'Stream memories sequentially, useful for processing large datasets chunked in memory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          contextId: { type: 'string', description: 'Context ID to stream chunks from' },
+          limit: { type: 'number', description: 'Batch size (default 10)' },
+          offset: { type: 'number', description: 'Offset for pagination' }
+        },
+        required: ['contextId']
+      },
+      execute: async (args) => {
+        const contextId = args.contextId as string;
+        const limit = (args.limit as number) ?? 10;
+        const offset = (args.offset as number) ?? 0;
+
+        const results = await manager.recall({
+          contextId,
+          limit,
+          offset
+        });
+
+        // Ensure we sort strictly by chunk index if available in metadata
+        const sorted = results.sort((a, b) => {
+            const idxA = (a.metadata as any)?.chunkIndex ?? 0;
+            const idxB = (b.metadata as any)?.chunkIndex ?? 0;
+            return idxA - idxB;
+        });
+
+        return {
+            status: 'streamed',
+            count: sorted.length,
+            contextId,
+            offset,
+            memories: sorted
+        };
+      }
+    },
+    {
       name: 'memory_consolidate',
       description: 'Trigger memory optimization and cleanup. Summarizes recent working memories into long-term memory.',
       parameters: {

@@ -17,6 +17,12 @@ export interface VoltClawAgentOptions {
   dlq?: DLQConfig;
   audit?: { path?: string };
   permissions?: PermissionConfig;
+  rlm?: CodeExecConfig;
+}
+
+export interface CodeExecConfig {
+  rlmTimeoutMs?: number;
+  contextSizeThreshold?: number;
 }
 
 export type Role = 'admin' | 'user' | 'agent' | 'subagent';
@@ -335,7 +341,9 @@ export interface MemoryQuery {
   tags?: string[];
   content?: string; // Simple text search
   embedding?: number[]; // Vector search
+  contextId?: string;
   limit?: number;
+  offset?: number;
 }
 
 export interface Session {

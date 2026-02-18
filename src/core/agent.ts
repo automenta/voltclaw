@@ -18,6 +18,7 @@ import { createGraphTools } from '../tools/graph.js';
 import { createSelfTestTool } from '../tools/self-test.js';
 import { createDocumentationTools } from '../tools/documentation.js';
 import { createPromptTools } from '../tools/prompt.js';
+import { createCodeExecTool } from '../tools/code_exec.js';
 import { ContextManager } from './context-manager.js';
 import { SelfTestFramework } from './self-test.js';
 import { DocumentationManager } from './documentation.js';
@@ -178,6 +179,15 @@ export class VoltClawAgent {
 
     if (options.tools) {
       this.registerTools(options.tools);
+    } else {
+      // If no tools provided, at least register code_exec if configured?
+      // No, caller usually provides createAllTools().
+      // But if user wants to override code_exec config while passing default tools, it's tricky.
+      // We'll trust user passed tools with config if they used createAllTools(config).
+      // However, we can register/overwrite code_exec if explicit config is provided in options.
+      if (options.rlm) {
+          this.registerTools([createCodeExecTool(options.rlm)]);
+      }
     }
 
     // Register self-test tool
@@ -588,9 +598,33 @@ export class VoltClawAgent {
       const parsed = this.tryParseJSON(content);
       
       if (parsed?.type === 'subtask') {
-        await this.handleSubtask(session, parsed, from);
+        // Use a dedicated session for the subtask to prevent polluting the main session
+        // or mixing concurrent subtasks.
+        const subId = parsed.subId as string;
+        // Must pass false for isSelf to ensure we use the specific subtask key, not 'self'
+        const subSession = this.store.get(`subtask:${subId}`, false);
+        await this.handleSubtask(subSession, parsed, from);
       } else if (parsed?.type === 'subtask_result') {
-        await this.handleSubtaskResult(session, parsed, from);
+        // Resolve the session that initiated the task using parentPubkey if available
+        let targetSession = session;
+        if (parsed.parentPubkey) {
+            const pKey = parsed.parentPubkey as string;
+            const isSelfParent = pKey === this.channel.identity.publicKey;
+            // If parent was self, we map to 'self' (or subtask session if we had that logic,
+            // but currently recursive calls from subtasks might need handling).
+
+            // Wait, if a subtask calls a subtask:
+            // handleSubtask (session: subtask:ID1) -> executeCall (from: self)
+            // payload parentPubkey = self.
+            // subtask_result parentPubkey = self.
+            // Here we map self -> 'self'.
+            // But the subtask was in 'subtask:ID1'.
+            // 'self' session does not have the subtask!
+
+            // We need the ACTUAL session ID/Key passed around.
+            // We can't rely on pubkey for internal sessions (subtask:...).
+        }
+        await this.handleSubtaskResult(targetSession, parsed, from);
       } else {
         await this.handleTopLevel(session, content, from);
       }
@@ -701,9 +735,24 @@ export class VoltClawAgent {
     // We need to inject depth specific context into the subtask prompt
     // Ideally we use buildSystemPrompt but customized for subtask
     // For now, let's stick to a simpler subtask prompt to keep context low
+
+    let contextInstruction = '';
+    const memoryMatch = contextSummary.match(/RLM Context stored in memory\. Use memory_recall\(id='(.*?)'\)/);
+    if (memoryMatch) {
+      contextInstruction = `\n\n[IMPORTANT] Large context is stored in memory (ID: ${memoryMatch[1]}). Use 'memory_recall' to access it.`;
+    }
+
     const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
 Task: ${task}
-Parent context: ${contextSummary}${mustFinish}`;
+Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
+
+    // Initialize session state for subtask
+    session.depth = depth;
+    session.subTasks = {};
+    session.callCount = 0;
+    session.estCostUSD = 0;
+    session.actualTokensUsed = 0;
+    session.topLevelStartedAt = Date.now();
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -712,15 +761,41 @@ Parent context: ${contextSummary}${mustFinish}`;
 
     try {
       const cb = this.getCircuitBreaker('llm');
-      const response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
+      let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
         tools: this.getToolDefinitions(depth)
       })));
+
+      // Tool Loop
+      while (response.toolCalls && response.toolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: response.content,
+          toolCalls: response.toolCalls
+        });
+
+        for (const call of response.toolCalls) {
+          const result = await this.executeTool(call.name, call.arguments, session, 'self');
+          messages.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: JSON.stringify(result)
+          });
+        }
+
+        response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
+          tools: this.getToolDefinitions(depth)
+        })));
+      }
       
       const result = response.content || '[no content]';
       await this.channel.send(
         this.channel.identity.publicKey,
-        JSON.stringify({ type: 'subtask_result', subId, result })
+        JSON.stringify({ type: 'subtask_result', subId, result, parentPubkey })
       );
+
+      // Save history to session for auditing/debugging
+      session.history = messages;
+      await this.store.save?.();
 
       const callCtx: CallContext = {
         taskId: subId,
@@ -733,7 +808,7 @@ Parent context: ${contextSummary}${mustFinish}`;
     } catch (error) {
       await this.channel.send(
         this.channel.identity.publicKey,
-        JSON.stringify({ type: 'subtask_result', subId, error: String(error) })
+        JSON.stringify({ type: 'subtask_result', subId, error: String(error), parentPubkey })
       );
     }
   }
@@ -745,7 +820,11 @@ Parent context: ${contextSummary}${mustFinish}`;
   ): Promise<void> {
     const subId = parsed.subId as string;
     const sub = session.subTasks[subId];
-    if (!sub) return;
+    if (!sub) {
+        // Debug logging for missing subtasks
+        // console.log(`Subtask ${subId} not found. Available: ${Object.keys(session.subTasks).join(', ')}`);
+        return;
+    }
 
     if (sub.timer) {
       clearTimeout(sub.timer);
@@ -896,7 +975,6 @@ Parent context: ${contextSummary}${mustFinish}`;
       resolve: undefined,
       reject: undefined
     };
-
     const payload = JSON.stringify({
       type: 'subtask',
       parentPubkey: from,
@@ -1013,13 +1091,17 @@ Parent context: ${contextSummary}${mustFinish}`;
     session: Session,
     timeoutMs: number = this.timeoutMs
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const sub = session.subTasks[subId];
-      if (!sub) {
-        reject(new Error(`Subtask ${subId} not found`));
-        return;
-      }
+    const sub = session.subTasks[subId];
+    if (!sub) {
+      throw new Error(`Subtask ${subId} not found`);
+    }
 
+    if (sub.arrived) {
+      if (sub.error) throw new Error(sub.error);
+      return sub.result!;
+    }
+
+    return new Promise((resolve, reject) => {
       // Store resolvers for handleSubtaskResult to call
       sub.resolve = resolve;
       sub.reject = reject;

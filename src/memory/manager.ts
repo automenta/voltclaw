@@ -1,4 +1,5 @@
 import type { Store, MemoryEntry, MemoryQuery, LLMProvider } from '../core/types.js';
+import { randomUUID } from 'crypto';
 
 export class MemoryManager {
   private readonly store: Store;
@@ -20,17 +21,62 @@ export class MemoryManager {
       throw new Error('Store does not support memory operations');
     }
 
+    const chunks = this.chunkText(content);
+
+    if (chunks.length <= 1) {
+      return this.createSingleMemory(chunks[0] || content, type, tags, importance, level);
+    }
+
+    const contextId = randomUUID();
+
+    // Store all chunks
+    await Promise.all(chunks.map(async (chunk, index) => {
+      let embedding: number[] | undefined;
+      if (this.llm?.embed) {
+        try {
+          embedding = await this.llm.embed(chunk);
+        } catch (e) {
+          console.error('Failed to generate embedding for chunk:', e);
+        }
+      }
+
+      await this.store.createMemory!({
+        content: chunk,
+        type,
+        tags,
+        importance,
+        embedding,
+        level,
+        lastAccess: Date.now(),
+        contextId,
+        metadata: {
+          chunkIndex: index,
+          totalChunks: chunks.length,
+          originalLength: content.length
+        }
+      });
+    }));
+
+    return contextId;
+  }
+
+  private async createSingleMemory(
+    content: string,
+    type: MemoryEntry['type'],
+    tags: string[],
+    importance: number,
+    level: number
+  ): Promise<string> {
     let embedding: number[] | undefined;
     if (this.llm?.embed) {
       try {
         embedding = await this.llm.embed(content);
       } catch (e) {
-        // Fallback or log error
         console.error('Failed to generate embedding:', e);
       }
     }
 
-    return this.store.createMemory({
+    return this.store.createMemory!({
       content,
       type,
       tags,
@@ -39,6 +85,79 @@ export class MemoryManager {
       level,
       lastAccess: Date.now()
     });
+  }
+
+  private chunkText(text: string, maxChunkSize: number = 1000, overlap: number = 100): string[] {
+    if (text.length <= maxChunkSize) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    let startIndex = 0;
+
+    while (startIndex < text.length) {
+      let endIndex = Math.min(startIndex + maxChunkSize, text.length);
+
+      // If not at the end, try to find a sentence break to end this chunk
+      if (endIndex < text.length) {
+        // Look back up to 20% of chunk size or 200 chars
+        const lookBack = Math.min(maxChunkSize * 0.2, 200);
+        const boundarySearchStart = Math.max(startIndex, endIndex - lookBack);
+
+        // Try finding paragraph breaks first
+        const paragraphBreak = text.lastIndexOf('\n\n', endIndex);
+
+        let bestBreak = -1;
+        if (paragraphBreak > boundarySearchStart) {
+          bestBreak = paragraphBreak + 2;
+        } else {
+            // Try sentence breaks
+            const lastPeriod = text.lastIndexOf('. ', endIndex);
+            const lastQuestion = text.lastIndexOf('? ', endIndex);
+            const lastExclamation = text.lastIndexOf('! ', endIndex);
+            const lastNewline = text.lastIndexOf('\n', endIndex);
+
+            bestBreak = Math.max(lastPeriod, lastQuestion, lastExclamation);
+            if (bestBreak !== -1 && bestBreak > boundarySearchStart) {
+                 bestBreak += 2; // Include punctuation and space
+            } else if (lastNewline > boundarySearchStart) {
+                 bestBreak = lastNewline + 1;
+            }
+        }
+
+        if (bestBreak !== -1) {
+            endIndex = bestBreak;
+        } else {
+            // Fallback to space
+            const lastSpace = text.lastIndexOf(' ', endIndex);
+            if (lastSpace > boundarySearchStart) {
+                endIndex = lastSpace + 1;
+            }
+        }
+      }
+
+      const chunk = text.slice(startIndex, endIndex);
+      if (chunk.trim().length > 0) {
+          chunks.push(chunk);
+      }
+
+      if (endIndex >= text.length) break;
+
+      // Calculate next start index with overlap
+      let nextStart = Math.max(startIndex + 1, endIndex - overlap);
+
+      // Try to align nextStart with a word boundary
+      if (nextStart > 0 && nextStart < endIndex) {
+         const lastSpace = text.lastIndexOf(' ', nextStart);
+         if (lastSpace > startIndex && lastSpace < endIndex) {
+             nextStart = lastSpace + 1;
+         }
+      }
+
+      startIndex = nextStart;
+    }
+
+    return chunks;
   }
 
   async update(id: string, updates: Partial<MemoryEntry>): Promise<void> {
