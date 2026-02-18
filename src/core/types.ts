@@ -251,14 +251,75 @@ export interface Store {
   // Optional MemoryStore interface methods
   createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
   searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
+  updateMemory?(id: string, updates: Partial<MemoryEntry>): Promise<void>;
   removeMemory?(id: string): Promise<void>;
   exportMemories?(): Promise<MemoryEntry[]>;
   consolidateMemories?(): Promise<void>;
+  // Graph methods
+  addGraphNode?(node: GraphNode): Promise<void>;
+  addGraphEdge?(edge: GraphEdge): Promise<void>;
+  getGraphNode?(id: string): Promise<GraphNode | undefined>;
+  getGraphEdges?(query: GraphQuery): Promise<GraphEdge[]>;
+  searchGraphNodes?(query: string): Promise<GraphNode[]>;
+  // Prompt methods
+  getPromptTemplate?(id: string): Promise<PromptTemplate | undefined>;
+  savePromptTemplate?(template: PromptTemplate): Promise<void>;
+  getPromptVersion?(templateId: string, version: number): Promise<PromptVersion | undefined>;
+  savePromptVersion?(version: PromptVersion): Promise<void>;
+  listPromptTemplates?(): Promise<PromptTemplate[]>;
+}
+
+export interface PromptTemplate {
+  id: string;
+  description: string;
+  latestVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromptVersion {
+  templateId: string;
+  version: number;
+  content: string;
+  changelog?: string;
+  metrics?: {
+    successCount: number;
+    failureCount: number;
+    avgCost: number;
+  };
+  createdAt: number;
+}
+
+export interface GraphNode {
+  id: string; // Entity name or unique ID
+  label: string; // Type of entity (e.g., Person, Place)
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface GraphEdge {
+  id: string; // Usually source_relation_target
+  source: string; // Node ID
+  target: string; // Node ID
+  relation: string; // e.g., KNOWS, LOCATED_IN
+  weight?: number; // 0.0-1.0
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface GraphQuery {
+  source?: string;
+  target?: string;
+  relation?: string;
+  limit?: number;
 }
 
 export interface MemoryEntry {
   id: string;
   type: 'working' | 'long_term' | 'episodic';
+  level: number; // 0-4
+  lastAccess: number;
   content: string;
   embedding?: number[];
   tags?: string[];
@@ -270,6 +331,7 @@ export interface MemoryEntry {
 
 export interface MemoryQuery {
   type?: MemoryEntry['type'];
+  level?: number;
   tags?: string[];
   content?: string; // Simple text search
   embedding?: number[]; // Vector search

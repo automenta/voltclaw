@@ -1,6 +1,10 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
+import type {
+  Store, Session, MemoryEntry, MemoryQuery,
+  GraphNode, GraphEdge, GraphQuery,
+  PromptTemplate, PromptVersion
+} from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -43,10 +47,57 @@ export class SQLiteStore implements Store {
         context_id TEXT,
         metadata TEXT -- JSON object
       );
+      CREATE TABLE IF NOT EXISTS graph_nodes (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS graph_edges (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        target TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight REAL DEFAULT 1.0,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY(target) REFERENCES graph_nodes(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS prompt_templates (
+        id TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        latest_version INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS prompt_versions (
+        template_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        changelog TEXT,
+        metrics TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (template_id, version),
+        FOREIGN KEY(template_id) REFERENCES prompt_templates(id) ON DELETE CASCADE
+      );
     `);
 
     try {
       await this.db.exec('ALTER TABLE memories ADD COLUMN embedding TEXT');
+    } catch {
+      // Ignore if column already exists
+    }
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN level INTEGER DEFAULT 1');
+    } catch {
+      // Ignore if column already exists
+    }
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN last_access INTEGER');
     } catch {
       // Ignore if column already exists
     }
@@ -108,10 +159,12 @@ export class SQLiteStore implements Store {
     const timestamp = Date.now();
 
     await this.db!.run(
-      `INSERT INTO memories (id, type, content, embedding, tags, importance, timestamp, context_id, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memories (id, type, level, last_access, content, embedding, tags, importance, timestamp, context_id, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       entry.type,
+      entry.level ?? 1,
+      entry.lastAccess ?? timestamp,
       entry.content,
       entry.embedding ? JSON.stringify(entry.embedding) : null,
       JSON.stringify(entry.tags ?? []),
@@ -133,6 +186,11 @@ export class SQLiteStore implements Store {
     if (query.type) {
       sql += ' AND type = ?';
       params.push(query.type);
+    }
+
+    if (query.level !== undefined) {
+      sql += ' AND level = ?';
+      params.push(query.level);
     }
 
     if (query.content) {
@@ -175,6 +233,8 @@ export class SQLiteStore implements Store {
     let entries = rows.map(row => ({
       id: row.id,
       type: row.type as MemoryEntry['type'],
+      level: row.level ?? 1,
+      lastAccess: row.last_access ?? row.timestamp,
       content: row.content,
       embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
@@ -218,6 +278,27 @@ export class SQLiteStore implements Store {
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
+  async updateMemory(id: string, updates: Partial<MemoryEntry>): Promise<void> {
+    if (!this.db) await this.load();
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.type) { fields.push('type = ?'); values.push(updates.type); }
+    if (updates.level !== undefined) { fields.push('level = ?'); values.push(updates.level); }
+    if (updates.lastAccess !== undefined) { fields.push('last_access = ?'); values.push(updates.lastAccess); }
+    if (updates.content) { fields.push('content = ?'); values.push(updates.content); }
+    if (updates.embedding) { fields.push('embedding = ?'); values.push(JSON.stringify(updates.embedding)); }
+    if (updates.tags) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
+    if (updates.importance !== undefined) { fields.push('importance = ?'); values.push(updates.importance); }
+    if (updates.metadata) { fields.push('metadata = ?'); values.push(JSON.stringify(updates.metadata)); }
+
+    if (fields.length === 0) return;
+
+    values.push(id);
+    await this.db!.run(`UPDATE memories SET ${fields.join(', ')} WHERE id = ?`, values);
+  }
+
   async removeMemory(id: string): Promise<void> {
     if (!this.db) await this.load();
     await this.db!.run('DELETE FROM memories WHERE id = ?', id);
@@ -241,13 +322,229 @@ export class SQLiteStore implements Store {
 
   async consolidateMemories(): Promise<void> {
     if (!this.db) await this.load();
-    // Basic consolidation: Prune low importance memories if count > 1000
-    // Keep top 1000 by importance + recency
+
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    const sevenDays = 7 * oneDay;
+    const thirtyDays = 30 * oneDay;
+    const ninetyDays = 90 * oneDay;
+
+    // Level 1 (Recent) -> Level 2 (Working) if older than 24h
+    await this.db!.run(
+      'UPDATE memories SET level = 2 WHERE level = 1 AND timestamp < ?',
+      now - oneDay
+    );
+
+    // Level 2 (Working) -> Level 4 (Archived) if not accessed in 7 days and importance < 3
+    await this.db!.run(
+      'UPDATE memories SET level = 4 WHERE level = 2 AND last_access < ? AND importance < 3',
+      now - sevenDays
+    );
+
+    // Level 3 (Long-term) -> Level 4 (Archived) if not accessed in 30 days and importance < 5
+    await this.db!.run(
+      'UPDATE memories SET level = 4 WHERE level = 3 AND last_access < ? AND importance < 5',
+      now - thirtyDays
+    );
+
+    // Prune Level 4 (Archived) older than 90 days
+    await this.db!.run(
+      'DELETE FROM memories WHERE level = 4 AND last_access < ?',
+      now - ninetyDays
+    );
+
+    // Also keep the original size constraint as a fallback
     const countResult = await this.db!.get('SELECT COUNT(*) as count FROM memories');
-    if (countResult.count > 1000) {
-        // Delete items with importance <= 1, keeping only newest if still needed
-        // For simplicity: delete oldest memories with importance < 3
-        await this.db!.run('DELETE FROM memories WHERE importance < 3 AND id NOT IN (SELECT id FROM memories ORDER BY timestamp DESC LIMIT 500)');
+    if (countResult.count > 5000) {
+        // Delete oldest lowest importance items regardless of level (except maybe level 3?)
+        await this.db!.run('DELETE FROM memories WHERE importance < 2 AND id NOT IN (SELECT id FROM memories ORDER BY timestamp DESC LIMIT 2000)');
     }
+  }
+
+  // Graph Methods
+
+  async addGraphNode(node: GraphNode): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_nodes (id, label, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         label = excluded.label,
+         metadata = excluded.metadata,
+         updated_at = excluded.updated_at`,
+      node.id,
+      node.label,
+      JSON.stringify(node.metadata ?? {}),
+      node.createdAt,
+      node.updatedAt
+    );
+  }
+
+  async addGraphEdge(edge: GraphEdge): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_edges (id, source, target, relation, weight, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         weight = excluded.weight,
+         metadata = excluded.metadata`,
+      edge.id,
+      edge.source,
+      edge.target,
+      edge.relation,
+      edge.weight ?? 1.0,
+      JSON.stringify(edge.metadata ?? {}),
+      edge.createdAt
+    );
+  }
+
+  async getGraphNode(id: string): Promise<GraphNode | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get('SELECT * FROM graph_nodes WHERE id = ?', id);
+    if (!row) return undefined;
+
+    return {
+      id: row.id,
+      label: row.label,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async getGraphEdges(query: GraphQuery): Promise<GraphEdge[]> {
+    if (!this.db) await this.load();
+
+    let sql = 'SELECT * FROM graph_edges WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (query.source) {
+      sql += ' AND source = ?';
+      params.push(query.source);
+    }
+    if (query.target) {
+      sql += ' AND target = ?';
+      params.push(query.target);
+    }
+    if (query.relation) {
+      sql += ' AND relation = ?';
+      params.push(query.relation);
+    }
+
+    if (query.limit) {
+      sql += ' LIMIT ?';
+      params.push(query.limit);
+    }
+
+    const rows = await this.db!.all(sql, params);
+
+    return rows.map(row => ({
+      id: row.id,
+      source: row.source,
+      target: row.target,
+      relation: row.relation,
+      weight: row.weight,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at
+    }));
+  }
+
+  async searchGraphNodes(query: string): Promise<GraphNode[]> {
+    if (!this.db) await this.load();
+    // Simple substring search on ID or Label
+    const sql = `
+      SELECT * FROM graph_nodes
+      WHERE id LIKE ? OR label LIKE ?
+      LIMIT 20
+    `;
+    const pattern = `%${query}%`;
+    const rows = await this.db!.all(sql, pattern, pattern);
+
+    return rows.map(row => ({
+      id: row.id,
+      label: row.label,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  // Prompt Methods
+
+  async getPromptTemplate(id: string): Promise<PromptTemplate | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get('SELECT * FROM prompt_templates WHERE id = ?', id);
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      description: row.description,
+      latestVersion: row.latest_version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async savePromptTemplate(template: PromptTemplate): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO prompt_templates (id, description, latest_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         description = excluded.description,
+         latest_version = excluded.latest_version,
+         updated_at = excluded.updated_at`,
+      template.id,
+      template.description,
+      template.latestVersion,
+      template.createdAt,
+      template.updatedAt
+    );
+  }
+
+  async getPromptVersion(templateId: string, version: number): Promise<PromptVersion | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get(
+      'SELECT * FROM prompt_versions WHERE template_id = ? AND version = ?',
+      templateId, version
+    );
+    if (!row) return undefined;
+    return {
+      templateId: row.template_id,
+      version: row.version,
+      content: row.content,
+      changelog: row.changelog,
+      metrics: JSON.parse(row.metrics || '{}'),
+      createdAt: row.created_at
+    };
+  }
+
+  async savePromptVersion(version: PromptVersion): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO prompt_versions (template_id, version, content, changelog, metrics, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(template_id, version) DO UPDATE SET
+         content = excluded.content,
+         changelog = excluded.changelog,
+         metrics = excluded.metrics`,
+      version.templateId,
+      version.version,
+      version.content,
+      version.changelog,
+      JSON.stringify(version.metrics ?? {}),
+      version.createdAt
+    );
+  }
+
+  async listPromptTemplates(): Promise<PromptTemplate[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM prompt_templates ORDER BY updated_at DESC');
+    return rows.map(row => ({
+      id: row.id,
+      description: row.description,
+      latestVersion: row.latest_version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
   }
 }

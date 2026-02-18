@@ -13,7 +13,8 @@ export class MemoryManager {
     content: string,
     type: MemoryEntry['type'] = 'working',
     tags: string[] = [],
-    importance: number = 1
+    importance: number = 1,
+    level: number = 1
   ): Promise<string> {
     if (!this.store.createMemory) {
       throw new Error('Store does not support memory operations');
@@ -34,8 +35,17 @@ export class MemoryManager {
       type,
       tags,
       importance,
-      embedding
+      embedding,
+      level,
+      lastAccess: Date.now()
     });
+  }
+
+  async update(id: string, updates: Partial<MemoryEntry>): Promise<void> {
+    if (!this.store.updateMemory) {
+      throw new Error('Store does not support memory updates');
+    }
+    await this.store.updateMemory(id, updates);
   }
 
   async recall(query: string | MemoryQuery): Promise<MemoryEntry[]> {
@@ -57,7 +67,17 @@ export class MemoryManager {
       }
     }
 
-    return this.store.searchMemories(q);
+    const entries = await this.store.searchMemories(q);
+
+    if (this.store.updateMemory) {
+      // Async update lastAccess for all retrieved memories
+      Promise.all(entries.map(e =>
+        this.store.updateMemory!(e.id, { lastAccess: Date.now() })
+          .catch(() => {})
+      )).catch(() => {});
+    }
+
+    return entries;
   }
 
   async forget(id: string): Promise<void> {

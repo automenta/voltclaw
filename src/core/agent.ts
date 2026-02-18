@@ -12,8 +12,16 @@ import { Retrier } from './retry.js';
 import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
 import { createDLQTools } from '../tools/dlq.js';
 import { FileAuditLog, type AuditLog } from './audit.js';
-import { MemoryManager } from '../memory/manager.js';
+import { MemoryManager, GraphManager } from '../memory/index.js';
 import { createMemoryTools } from '../tools/memory.js';
+import { createGraphTools } from '../tools/graph.js';
+import { createSelfTestTool } from '../tools/self-test.js';
+import { createDocumentationTools } from '../tools/documentation.js';
+import { createPromptTools } from '../tools/prompt.js';
+import { ContextManager } from './context-manager.js';
+import { SelfTestFramework } from './self-test.js';
+import { DocumentationManager } from './documentation.js';
+import { PromptManager } from './prompt-manager.js';
 
 import type {
   VoltClawAgentOptions,
@@ -83,6 +91,11 @@ export class VoltClawAgent {
   private readonly fallbacks: Record<string, string>;
   public readonly dlq: DeadLetterQueue;
   public readonly memory: MemoryManager;
+  public readonly graph: GraphManager;
+  public readonly contextManager: ContextManager;
+  public readonly selfTest: SelfTestFramework;
+  public readonly docs: DocumentationManager;
+  public readonly prompts: PromptManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -152,11 +165,30 @@ export class VoltClawAgent {
     }
 
     this.memory = new MemoryManager(this.store, this.llm);
+    this.graph = new GraphManager(this.store, this.llm);
+    this.contextManager = new ContextManager(this.llm, {
+      maxMessages: this.maxHistory,
+      preserveLast: 20
+    });
+    this.selfTest = new SelfTestFramework(this);
+    this.docs = new DocumentationManager(this);
+    this.prompts = new PromptManager(this.store, this.llm);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
     if (options.tools) {
       this.registerTools(options.tools);
+    }
+
+    // Register self-test tool
+    this.registerTools([createSelfTestTool(this.selfTest)]);
+
+    // Register documentation tools
+    this.registerTools(createDocumentationTools(this.docs));
+
+    // Register prompt tools if store supports it
+    if (this.store.savePromptTemplate) {
+      this.registerTools(createPromptTools(this.prompts));
     }
 
     // Register DLQ tools
@@ -167,6 +199,11 @@ export class VoltClawAgent {
     // Register memory tools if store supports it
     if (this.store.createMemory) {
       this.registerTools(createMemoryTools(this.memory));
+    }
+
+    // Register graph tools if store supports it
+    if (this.store.addGraphNode) {
+      this.registerTools(createGraphTools(this.graph));
     }
 
     if (options.middleware) {
@@ -387,10 +424,12 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory)
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     const cb = this.getCircuitBreaker('llm');
     let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
@@ -441,10 +480,12 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory)
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     if (!this.llm.stream) {
       const response = await this.query(message, _options);
@@ -586,11 +627,13 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory),
       { role: 'user', content }
     ];
+
+    messages = await this.contextManager.manageContext(messages);
 
     const cb = this.getCircuitBreaker('llm');
     let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
