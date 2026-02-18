@@ -58,10 +58,19 @@ export const codeExecTool: Tool = {
              }
           }
 
-          return await agent.executeTool('call', {
+          const result = await agent.executeTool('call', {
             task: subtask,
             summary
           }, session, from || 'unknown');
+
+          if (result && typeof result.result === 'string') {
+            try {
+              return JSON.parse(result.result);
+            } catch {
+              return result.result;
+            }
+          }
+          return result;
         },
 
         // Power user access

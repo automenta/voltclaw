@@ -701,9 +701,16 @@ export class VoltClawAgent {
     // We need to inject depth specific context into the subtask prompt
     // Ideally we use buildSystemPrompt but customized for subtask
     // For now, let's stick to a simpler subtask prompt to keep context low
+
+    let contextInstruction = '';
+    const memoryMatch = contextSummary.match(/RLM Context stored in memory\. Use memory_recall\(id='(.*?)'\)/);
+    if (memoryMatch) {
+      contextInstruction = `\n\n[IMPORTANT] Large context is stored in memory (ID: ${memoryMatch[1]}). Use 'memory_recall' to access it.`;
+    }
+
     const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
 Task: ${task}
-Parent context: ${contextSummary}${mustFinish}`;
+Parent context: ${contextSummary}${contextInstruction}${mustFinish}`;
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -1013,13 +1020,17 @@ Parent context: ${contextSummary}${mustFinish}`;
     session: Session,
     timeoutMs: number = this.timeoutMs
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const sub = session.subTasks[subId];
-      if (!sub) {
-        reject(new Error(`Subtask ${subId} not found`));
-        return;
-      }
+    const sub = session.subTasks[subId];
+    if (!sub) {
+      throw new Error(`Subtask ${subId} not found`);
+    }
 
+    if (sub.arrived) {
+      if (sub.error) throw new Error(sub.error);
+      return sub.result!;
+    }
+
+    return new Promise((resolve, reject) => {
       // Store resolvers for handleSubtaskResult to call
       sub.resolve = resolve;
       sub.reject = reject;
