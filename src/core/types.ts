@@ -251,6 +251,7 @@ export interface Store {
   // Optional MemoryStore interface methods
   createMemory?(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): Promise<string>;
   searchMemories?(query: MemoryQuery): Promise<MemoryEntry[]>;
+  updateMemory?(id: string, updates: Partial<MemoryEntry>): Promise<void>;
   removeMemory?(id: string): Promise<void>;
   exportMemories?(): Promise<MemoryEntry[]>;
   consolidateMemories?(): Promise<void>;
@@ -259,6 +260,8 @@ export interface Store {
 export interface MemoryEntry {
   id: string;
   type: 'working' | 'long_term' | 'episodic';
+  level: number; // 0-4
+  lastAccess: number;
   content: string;
   embedding?: number[];
   tags?: string[];
@@ -270,6 +273,7 @@ export interface MemoryEntry {
 
 export interface MemoryQuery {
   type?: MemoryEntry['type'];
+  level?: number;
   tags?: string[];
   content?: string; // Simple text search
   embedding?: number[]; // Vector search
