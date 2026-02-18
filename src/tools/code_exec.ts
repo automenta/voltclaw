@@ -164,12 +164,15 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_set = async (key: string, value: any) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             // Access 'store' which might be private in TS but accessible in JS runtime
-             // Or 'persistence' if stored there. In agent.ts, constructor assigns to this.store.
-             // But private fields might not be enumerable?
-             // In TS output, private fields are usually just property names unless using #private.
-             // We'll try both to be safe.
-             const store = (agent as any).store || (agent as any).persistence;
+
+             let store;
+             if (typeof agent.getStore === 'function') {
+                 store = agent.getStore();
+             } else {
+                 // Fallback for legacy or mock agents
+                 store = (agent as any).store || (agent as any).persistence;
+             }
+
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -183,7 +186,14 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_get = async (key: string) => {
              const rootId = session.rootId || session.id;
              if (!rootId) return undefined;
-             const store = (agent as any).store || (agent as any).persistence;
+
+             let store;
+             if (typeof agent.getStore === 'function') {
+                 store = agent.getStore();
+             } else {
+                 store = (agent as any).store || (agent as any).persistence;
+             }
+
              if (!store) return undefined;
 
              const rootSession = store.get(rootId);
@@ -193,7 +203,14 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_increment = async (key: string, delta: number = 1) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             const store = (agent as any).store || (agent as any).persistence;
+
+             let store;
+             if (typeof agent.getStore === 'function') {
+                 store = agent.getStore();
+             } else {
+                 store = (agent as any).store || (agent as any).persistence;
+             }
+
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -210,7 +227,14 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_shared_push = async (key: string, value: any) => {
              const rootId = session.rootId || session.id;
              if (!rootId) throw new Error('Root ID not found');
-             const store = (agent as any).store || (agent as any).persistence;
+
+             let store;
+             if (typeof agent.getStore === 'function') {
+                 store = agent.getStore();
+             } else {
+                 store = (agent as any).store || (agent as any).persistence;
+             }
+
              if (!store) throw new Error('Store not available');
 
              const rootSession = store.get(rootId);
@@ -229,9 +253,15 @@ export function createCodeExecTool(config: CodeExecConfig = {}): Tool {
         ctxObj.rlm_trace = async () => {
              const trace = [];
              let currentId = session.id;
-             const store = (agent as any).store || (agent as any).persistence;
 
-             while (currentId) {
+             let store;
+             if (typeof agent.getStore === 'function') {
+                 store = agent.getStore();
+             } else {
+                 store = (agent as any).store || (agent as any).persistence;
+             }
+
+             while (currentId && store) {
                  const sess = store.get(currentId);
                  trace.push({
                      id: currentId,

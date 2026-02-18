@@ -422,6 +422,10 @@ export class VoltClawAgent {
     return this.executeTool(name, args, session, this.channel.identity.publicKey);
   }
 
+  public getStore(): Store {
+    return this.store;
+  }
+
   async query(message: string, _options?: QueryOptions): Promise<string> {
     const session = this.store.get('self', true);
 
