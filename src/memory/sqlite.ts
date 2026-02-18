@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import type { Store, Session, MemoryEntry, MemoryQuery } from '../core/types.js';
+import type { Store, Session, MemoryEntry, MemoryQuery, GraphNode, GraphEdge, GraphQuery } from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
 import path from 'path';
@@ -42,6 +42,24 @@ export class SQLiteStore implements Store {
         timestamp INTEGER NOT NULL,
         context_id TEXT,
         metadata TEXT -- JSON object
+      );
+      CREATE TABLE IF NOT EXISTS graph_nodes (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS graph_edges (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        target TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight REAL DEFAULT 1.0,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY(target) REFERENCES graph_nodes(id) ON DELETE CASCADE
       );
     `);
 
@@ -320,5 +338,113 @@ export class SQLiteStore implements Store {
         // Delete oldest lowest importance items regardless of level (except maybe level 3?)
         await this.db!.run('DELETE FROM memories WHERE importance < 2 AND id NOT IN (SELECT id FROM memories ORDER BY timestamp DESC LIMIT 2000)');
     }
+  }
+
+  // Graph Methods
+
+  async addGraphNode(node: GraphNode): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_nodes (id, label, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         label = excluded.label,
+         metadata = excluded.metadata,
+         updated_at = excluded.updated_at`,
+      node.id,
+      node.label,
+      JSON.stringify(node.metadata ?? {}),
+      node.createdAt,
+      node.updatedAt
+    );
+  }
+
+  async addGraphEdge(edge: GraphEdge): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO graph_edges (id, source, target, relation, weight, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         weight = excluded.weight,
+         metadata = excluded.metadata`,
+      edge.id,
+      edge.source,
+      edge.target,
+      edge.relation,
+      edge.weight ?? 1.0,
+      JSON.stringify(edge.metadata ?? {}),
+      edge.createdAt
+    );
+  }
+
+  async getGraphNode(id: string): Promise<GraphNode | undefined> {
+    if (!this.db) await this.load();
+    const row = await this.db!.get('SELECT * FROM graph_nodes WHERE id = ?', id);
+    if (!row) return undefined;
+
+    return {
+      id: row.id,
+      label: row.label,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async getGraphEdges(query: GraphQuery): Promise<GraphEdge[]> {
+    if (!this.db) await this.load();
+
+    let sql = 'SELECT * FROM graph_edges WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (query.source) {
+      sql += ' AND source = ?';
+      params.push(query.source);
+    }
+    if (query.target) {
+      sql += ' AND target = ?';
+      params.push(query.target);
+    }
+    if (query.relation) {
+      sql += ' AND relation = ?';
+      params.push(query.relation);
+    }
+
+    if (query.limit) {
+      sql += ' LIMIT ?';
+      params.push(query.limit);
+    }
+
+    const rows = await this.db!.all(sql, params);
+
+    return rows.map(row => ({
+      id: row.id,
+      source: row.source,
+      target: row.target,
+      relation: row.relation,
+      weight: row.weight,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at
+    }));
+  }
+
+  async searchGraphNodes(query: string): Promise<GraphNode[]> {
+    if (!this.db) await this.load();
+    // Simple substring search on ID or Label
+    const sql = `
+      SELECT * FROM graph_nodes
+      WHERE id LIKE ? OR label LIKE ?
+      LIMIT 20
+    `;
+    const pattern = `%${query}%`;
+    const rows = await this.db!.all(sql, pattern, pattern);
+
+    return rows.map(row => ({
+      id: row.id,
+      label: row.label,
+      metadata: JSON.parse(row.metadata || '{}'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
   }
 }

@@ -12,8 +12,9 @@ import { Retrier } from './retry.js';
 import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
 import { createDLQTools } from '../tools/dlq.js';
 import { FileAuditLog, type AuditLog } from './audit.js';
-import { MemoryManager } from '../memory/manager.js';
+import { MemoryManager, GraphManager } from '../memory/index.js';
 import { createMemoryTools } from '../tools/memory.js';
+import { createGraphTools } from '../tools/graph.js';
 
 import type {
   VoltClawAgentOptions,
@@ -83,6 +84,7 @@ export class VoltClawAgent {
   private readonly fallbacks: Record<string, string>;
   public readonly dlq: DeadLetterQueue;
   public readonly memory: MemoryManager;
+  public readonly graph: GraphManager;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -152,6 +154,7 @@ export class VoltClawAgent {
     }
 
     this.memory = new MemoryManager(this.store, this.llm);
+    this.graph = new GraphManager(this.store, this.llm);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
@@ -167,6 +170,11 @@ export class VoltClawAgent {
     // Register memory tools if store supports it
     if (this.store.createMemory) {
       this.registerTools(createMemoryTools(this.memory));
+    }
+
+    // Register graph tools if store supports it
+    if (this.store.addGraphNode) {
+      this.registerTools(createGraphTools(this.graph));
     }
 
     if (options.middleware) {
