@@ -15,6 +15,7 @@ import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager } from '../memory/manager.js';
 import { ContextManager } from './context-manager.js';
 import { createMemoryTools } from '../tools/memory.js';
+import { createTestTools } from '../tools/test.js';
 
 import type {
   VoltClawAgentOptions,
@@ -170,6 +171,10 @@ export class VoltClawAgent {
     // Register memory tools if store supports it
     if (this.store.createMemory) {
       this.registerTools(createMemoryTools(this.memory));
+    }
+
+    if (options.enableSelfTest) {
+      this.registerTools(createTestTools(this));
     }
 
     if (options.middleware) {

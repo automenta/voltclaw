@@ -17,6 +17,7 @@ export interface VoltClawAgentOptions {
   dlq?: DLQConfig;
   audit?: { path?: string };
   permissions?: PermissionConfig;
+  enableSelfTest?: boolean;
 }
 
 export type Role = 'admin' | 'user' | 'agent' | 'subagent';
