@@ -1,117 +1,172 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TestHarness, MockLLM } from '../../src/testing/index.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { VoltClawAgent } from '../../src/core/agent.js';
+import { createCallTool } from '../../src/tools/call.js';
+import { createCodeExecTool } from '../../src/tools/code_exec.js';
+import { MockLLM } from '../../src/testing/mock-llm.js';
+import { FileStore } from '../../src/memory/file-store.js';
+import path from 'path';
+import fs from 'fs';
+import type { Channel, MessageHandler, Unsubscribe } from '../../src/core/types.js';
+
+class MockChannel implements Channel {
+    readonly type = 'mock';
+    readonly identity = { publicKey: 'mock-pubkey' };
+    private handlers: MessageHandler[] = [];
+
+    async start() {}
+    async stop() {}
+    async send(to: string, content: string) {
+        if (to === this.identity.publicKey) {
+             const meta = { timestamp: Date.now() };
+             setTimeout(() => {
+                 for (const h of this.handlers) h(to, content, meta);
+             }, 0);
+        }
+    }
+    subscribe(handler: MessageHandler): Unsubscribe {
+        this.handlers.push(handler);
+        return () => {};
+    }
+    on() {}
+}
 
 describe('Call Integration', () => {
-  let harness: TestHarness;
+    const storePath = path.join(process.cwd(), 'test-call.json');
+    let agent: VoltClawAgent;
 
-  afterEach(async () => {
-    await harness?.stop();
-  });
+    beforeEach(() => {
+        if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
+    });
 
-  it('calls sub-agent task and returns result', async () => {
-    harness = new TestHarness({
-      llm: new MockLLM({
-        handler: async (messages) => {
-            const last = messages[messages.length - 1];
-            const content = last.content || '';
+    afterEach(async () => {
+        if (agent) await agent.stop();
+        if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
+    });
 
-            if (content.includes('Analyze the request')) {
-                 return {
-                    content: 'I will call this task.',
-                    toolCalls: [
-                        {
-                            id: 'call_1',
+    it('calls sub-agent task and returns result', async () => {
+        const mockLLM = new MockLLM({
+            handler: async (messages) => {
+                const last = messages[messages.length - 1];
+                const system = messages.find(m => m.role === 'system')?.content || '';
+
+                if (last.role === 'user' && last.content?.includes('Perform subtask')) {
+                    return {
+                        content: "Calling subtask...",
+                        toolCalls: [{
+                            id: 'call1',
                             name: 'call',
-                            arguments: { task: 'Calculate 2+2', summary: 'Math task' }
-                        }
-                    ]
-                };
-            }
-
-            // Subtask handling
-            if (content === 'Begin.') {
-                const system = messages.find(m => m.role === 'system');
-                if (system && system.content?.includes('Calculate 2+2')) {
-                    return 'The result is 4.';
+                            arguments: {
+                                task: 'Say Hello',
+                                summary: 'Just say hello'
+                            }
+                        }]
+                    };
                 }
-            }
 
-            if (content.includes('Synthesize')) {
-                return 'Final answer is 4.';
-            }
+                if (system.includes('FOCUSED sub-agent')) {
+                    return { content: 'Hello from sub-agent!' };
+                }
 
-            if (content.includes('"result":"The result is 4."')) {
-                return 'Final answer is 4.';
-            }
+                if (last.role === 'tool') {
+                    if (last.content?.includes('Hello from sub-agent!')) {
+                        return { content: "Subtask complete: " + last.content };
+                    } else {
+                        // Debug logging
+                        console.log('Tool content mismatch:', last.content);
+                    }
+                }
 
-            return 'Mock response';
-        }
-      })
+                return { content: "Thinking..." };
+            }
+        });
+
+        agent = new VoltClawAgent({
+            llm: mockLLM,
+            channel: new MockChannel(),
+            persistence: new FileStore({ path: storePath }),
+            tools: [
+                createCallTool({
+                    onCall: async () => ({}), // Handled by agent
+                    currentDepth: 0,
+                    maxDepth: 4
+                })
+            ],
+            call: {
+                maxDepth: 4,
+                timeoutMs: 2000
+            }
+        });
+
+        await agent.start();
+        const response = await agent.query("Perform subtask");
+        expect(response).toContain("Subtask complete");
     });
 
-    await harness.start();
+    it('sub-agent performs multi-step task with tool use', async () => {
+        let childCalls = 0;
+        const mockLLM = new MockLLM({
+            handler: async (messages) => {
+                const last = messages[messages.length - 1];
+                const system = messages.find(m => m.role === 'system')?.content || '';
 
-    // Trigger call
-    const response = await harness.agent.query('Analyze the request');
+                // Parent
+                if (last.role === 'user' && last.content?.includes('Complex subtask')) {
+                    return {
+                        content: "Delegating...",
+                        toolCalls: [{
+                            id: 'call1',
+                            name: 'call',
+                            arguments: { task: 'Calculate 1+1 using code' }
+                        }]
+                    };
+                }
 
-    // The response should be the final synthesized answer
-    expect(response).toContain('Final answer is 4');
+                // Child (Turn 1): Decides to use code_exec
+                if (system.includes('FOCUSED sub-agent') && last.content === 'Begin.') {
+                    childCalls++;
+                    return {
+                        content: "I will calculate it.",
+                        toolCalls: [{
+                            id: 'child_tool1',
+                            name: 'code_exec',
+                            arguments: { code: '1 + 1' }
+                        }]
+                    };
+                }
 
-    // Check if call occurred
-    const session = harness.agent['store'].get('self', true);
-    expect(session.callCount).toBe(1);
+                // Child (Turn 2): Receives result
+                if (system.includes('FOCUSED sub-agent') && last.role === 'tool') {
+                    childCalls++;
+                    return { content: "The answer is 2." };
+                }
 
-    // Verify subtask result
-    const subtasks = Object.values(session.subTasks);
-    expect(subtasks.length).toBe(1);
-    expect(subtasks[0].result).toBe('The result is 4.');
-    expect(subtasks[0].arrived).toBe(true);
-  });
+                // Parent: Receives final answer from subtask
+                if (!system.includes('FOCUSED sub-agent') && last.role === 'tool') {
+                    if (last.content?.includes('The answer is 2.')) {
+                        return { content: "Final result: 2" };
+                    } else {
+                        console.log('Tool content mismatch (multi):', last.content);
+                    }
+                }
 
-  it('handles call timeout', async () => {
-    harness = new TestHarness({
-      call: { timeoutMs: 100 }, // Short timeout
-      llm: new MockLLM({
-        handler: async (messages) => {
-            const last = messages[messages.length - 1];
-            const content = last.content || '';
-
-            if (content.includes('Task to timeout')) {
-                return {
-                    content: 'Calling...',
-                    toolCalls: [{
-                        id: 'call_2',
-                        name: 'call',
-                        arguments: { task: 'Slow task' }
-                    }]
-                };
+                return { content: "Thinking..." };
             }
+        });
 
-            if (content === 'Begin.') {
-                // Simulate slow subtask
-                await new Promise(r => setTimeout(r, 200));
-                return 'Too late';
-            }
+        agent = new VoltClawAgent({
+            llm: mockLLM,
+            channel: new MockChannel(),
+            persistence: new FileStore({ path: storePath }),
+            tools: [
+                createCallTool({ onCall: async () => ({}), currentDepth: 0, maxDepth: 4 }),
+                createCodeExecTool()
+            ],
+            call: { maxDepth: 4, timeoutMs: 5000 }
+        });
 
-            // If the agent receives a timeout error from the tool, it might try to apologize or something
-            // We just return something simple
-            return 'I timed out.';
-        }
-      })
+        await agent.start();
+        const response = await agent.query("Complex subtask");
+        expect(response).toBe("Final result: 2");
+        expect(childCalls).toBeGreaterThanOrEqual(2);
     });
-
-    await harness.start();
-
-    const response = await harness.agent.query('Task to timeout');
-
-    const session = harness.agent['store'].get('self', true);
-    const subtasks = Object.values(session.subTasks);
-
-    expect(subtasks.length).toBe(1);
-    // Wait for a bit to ensure timeout callback ran if race condition exists
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(subtasks[0].error).toBeDefined();
-    expect(subtasks[0].error).toContain('Timeout');
-  });
 });

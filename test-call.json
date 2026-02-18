@@ -1,0 +1,42 @@
+{
+  "self": {
+    "history": [
+      {
+        "role": "system",
+        "content": "FOCUSED sub-agent (depth 1/4).\nTask: Calculate 1+1 using code\nParent context: "
+      },
+      {
+        "role": "user",
+        "content": "Begin."
+      },
+      {
+        "role": "assistant",
+        "content": "I will calculate it.",
+        "toolCalls": [
+          {
+            "id": "child_tool1",
+            "name": "code_exec",
+            "arguments": {
+              "code": "1 + 1"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "toolCallId": "child_tool1",
+        "content": "{\"output\":2,\"sessionId\":\"default\",\"contextSize\":9}"
+      },
+      {
+        "role": "assistant",
+        "content": "Thinking..."
+      }
+    ],
+    "callCount": 0,
+    "estCostUSD": 0,
+    "actualTokensUsed": 0,
+    "subTasks": {},
+    "depth": 1,
+    "topLevelStartedAt": 1771444277203
+  }
+}
