@@ -151,7 +151,7 @@ export class VoltClawAgent {
         this.auditLog = new FileAuditLog(options.audit.path);
     }
 
-    this.memory = new MemoryManager(this.store);
+    this.memory = new MemoryManager(this.store, this.llm);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 

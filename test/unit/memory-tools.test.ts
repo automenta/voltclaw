@@ -11,7 +11,8 @@ describe('Memory Tools', () => {
     getAll: vi.fn(),
     load: vi.fn(),
     save: vi.fn(),
-    clear: vi.fn()
+    clear: vi.fn(),
+    consolidateMemories: vi.fn().mockResolvedValue(undefined)
   };
 
   const manager = new MemoryManager(mockStore);
@@ -60,5 +61,35 @@ describe('Memory Tools', () => {
 
     expect(mockStore.removeMemory).toHaveBeenCalledWith('mem-1');
     expect(result).toHaveProperty('status', 'removed');
+  });
+
+  it('memory_consolidate should summarize if enough memories exist', async () => {
+    // Override searchMemories to return multiple items
+    const manyMemories = Array.from({ length: 10 }, (_, i) => ({
+      id: `mem-${i}`,
+      content: `memory ${i}`,
+      type: 'working',
+      importance: 5,
+      timestamp: Date.now()
+    }));
+
+    mockStore.searchMemories = vi.fn().mockResolvedValue(manyMemories);
+
+    const tool = toolMap.get('memory_consolidate')!;
+
+    const mockAgent = {
+      query: vi.fn().mockResolvedValue('Summary of memories')
+    };
+
+    const result = await tool.execute({}, mockAgent as any, {} as any, 'user');
+
+    expect(mockAgent.query).toHaveBeenCalled();
+    expect(mockStore.createMemory).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Summary of memories',
+      type: 'long_term',
+      tags: ['summary', 'consolidation']
+    }));
+    // @ts-ignore
+    expect(result.processed).toBe(10);
   });
 });

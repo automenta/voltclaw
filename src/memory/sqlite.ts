@@ -36,6 +36,7 @@ export class SQLiteStore implements Store {
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
         content TEXT NOT NULL,
+        embedding TEXT, -- JSON array of numbers
         tags TEXT, -- JSON array
         importance INTEGER,
         timestamp INTEGER NOT NULL,
@@ -43,6 +44,12 @@ export class SQLiteStore implements Store {
         metadata TEXT -- JSON object
       );
     `);
+
+    try {
+      await this.db.exec('ALTER TABLE memories ADD COLUMN embedding TEXT');
+    } catch {
+      // Ignore if column already exists
+    }
 
     const rows = await this.db.all('SELECT key, data FROM sessions');
     for (const row of rows) {
@@ -101,11 +108,12 @@ export class SQLiteStore implements Store {
     const timestamp = Date.now();
 
     await this.db!.run(
-      `INSERT INTO memories (id, type, content, tags, importance, timestamp, context_id, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO memories (id, type, content, embedding, tags, importance, timestamp, context_id, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       entry.type,
       entry.content,
+      entry.embedding ? JSON.stringify(entry.embedding) : null,
       JSON.stringify(entry.tags ?? []),
       entry.importance ?? 0,
       timestamp,
@@ -137,28 +145,77 @@ export class SQLiteStore implements Store {
     if (query.tags && query.tags.length > 0) {
       for (const tag of query.tags) {
         sql += ' AND tags LIKE ?';
-        params.push(`%${tag}%`); // Very loose matching, improved in future
+        // Use JSON.stringify to ensure we match the quoted string, avoiding partial matches
+        // e.g. "apple" won't match "pineapple"
+        const jsonTag = JSON.stringify(tag);
+        // We strip the leading/trailing quotes from JSON.stringify because we're inside LIKE %...%
+        // Actually, we WANT the quotes to ensure boundary.
+        // JSON.stringify("apple") -> "apple"
+        // So we search for %"apple"%
+        params.push(`%${jsonTag}%`);
       }
     }
 
-    sql += ' ORDER BY timestamp DESC';
+    // If query has embedding, we ignore default sort order and limit here,
+    // because we need to fetch all candidates to compute similarity in memory
+    // unless we combine it with other filters.
+    // For now, if embedding is present, fetch ALL candidates matching other criteria
+    // then sort by cosine similarity.
 
-    if (query.limit) {
-      sql += ' LIMIT ?';
-      params.push(query.limit);
+    if (!query.embedding) {
+      sql += ' ORDER BY timestamp DESC';
+      if (query.limit) {
+        sql += ' LIMIT ?';
+        params.push(query.limit);
+      }
     }
 
     const rows = await this.db!.all(sql, params);
-    return rows.map(row => ({
+
+    let entries = rows.map(row => ({
       id: row.id,
       type: row.type as MemoryEntry['type'],
       content: row.content,
+      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,
       contextId: row.context_id,
       metadata: JSON.parse(row.metadata || '{}')
     }));
+
+    if (query.embedding && query.embedding.length > 0) {
+      entries = entries
+        .map(entry => ({
+          ...entry,
+          similarity: this.cosineSimilarity(query.embedding!, entry.embedding)
+        }))
+        .filter(e => e.similarity > -2) // Keep all, sort below
+        .sort((a, b) => b.similarity - a.similarity);
+
+      if (query.limit) {
+        entries = entries.slice(0, query.limit);
+      }
+
+      // Strip similarity for return type compatibility, or keep it if we change type
+      // MemoryEntry doesn't have similarity, but it's fine to return extended objects usually.
+    }
+
+    return entries;
+  }
+
+  private cosineSimilarity(a: number[], b?: number[]): number {
+    if (!b || a.length !== b.length) return -1;
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
   async removeMemory(id: string): Promise<void> {
@@ -173,6 +230,7 @@ export class SQLiteStore implements Store {
       id: row.id,
       type: row.type as MemoryEntry['type'],
       content: row.content,
+      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,

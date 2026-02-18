@@ -185,6 +185,7 @@ export interface LLMProvider {
   readonly supportsTools?: boolean;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
   stream?(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<ChatChunk>;
+  embed?(text: string): Promise<number[]>;
   countTokens?(text: string): number;
 }
 
@@ -259,6 +260,7 @@ export interface MemoryEntry {
   id: string;
   type: 'working' | 'long_term' | 'episodic';
   content: string;
+  embedding?: number[];
   tags?: string[];
   importance?: number;
   timestamp: number;
@@ -270,6 +272,7 @@ export interface MemoryQuery {
   type?: MemoryEntry['type'];
   tags?: string[];
   content?: string; // Simple text search
+  embedding?: number[]; // Vector search
   limit?: number;
 }
 
