@@ -2,6 +2,7 @@ import vm from 'vm';
 import { Tool } from '../core/types.js';
 
 const replContexts = new Map<string, vm.Context>();
+const CONTEXT_SIZE_THRESHOLD = 2000;
 
 export const codeExecTool: Tool = {
   name: 'code_exec',
@@ -40,7 +41,18 @@ export const codeExecTool: Tool = {
                  if (k in ctx) extracted[k] = ctx[k];
              }
              try {
-                summary = `Context: ${JSON.stringify(extracted)}`;
+                const contextStr = JSON.stringify(extracted);
+                if (contextStr.length > CONTEXT_SIZE_THRESHOLD && agent.memory) {
+                  const memoryId = await agent.memory.storeMemory(
+                    contextStr,
+                    'working',
+                    ['rlm_context', `session:${sessionId}`],
+                    10 // High importance
+                  );
+                  summary = `RLM Context stored in memory. Use memory_recall(id='${memoryId}') to retrieve it.`;
+                } else {
+                  summary = `Context: ${contextStr}`;
+                }
              } catch (e) {
                 summary = `Context: [Serialization Error: ${String(e)}]`;
              }
