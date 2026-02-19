@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Tool, ToolCallResult } from './types.js';
-import { SkillManager } from '../core/skills.js';
+import { SkillLoader } from '../core/skills.js';
 import { formatToolError } from './errors.js';
 
 const InstallSkillSchema = z.object({
@@ -9,7 +9,7 @@ const InstallSkillSchema = z.object({
 });
 
 export const createSkillTools = (): Tool[] => {
-  const manager = new SkillManager();
+  const manager = new SkillLoader();
 
   return [
     {

@@ -46,7 +46,7 @@ export async function configureCommand(): Promise<void> {
       when: (answers: any) => answers.provider !== 'ollama',
       mask: '*'
     }
-  ]);
+  ] as any);
 
   // 2. Channel Configuration
   const channels = [...(currentConfig.channels || [])];
@@ -64,7 +64,7 @@ export async function configureCommand(): Promise<void> {
       message: 'Enter Nostr Relays (comma separated):',
       default: currentConfig.relays.join(', ')
     }
-  ]);
+  ] as any);
   const nostrRelays = nostrAnswers.relays.split(',').map((r: string) => r.trim()).filter((r: string) => r);
 
   // Configure Telegram
@@ -83,7 +83,7 @@ export async function configureCommand(): Promise<void> {
       default: channels.find(c => c.type === 'telegram')?.token,
       mask: '*'
     }
-  ]);
+  ] as any);
 
   if (telegramAnswers.enable) {
       const existing = channels.findIndex(c => c.type === 'telegram');
@@ -115,7 +115,7 @@ export async function configureCommand(): Promise<void> {
       default: channels.find(c => c.type === 'discord')?.token,
       mask: '*'
     }
-  ]);
+  ] as any);
 
   if (discordAnswers.enable) {
       const existing = channels.findIndex(c => c.type === 'discord');
@@ -152,7 +152,7 @@ export async function configureCommand(): Promise<void> {
         { name: 'Import private key (nsec/hex)', value: 'import' }
       ]
     }
-  ]);
+  ] as any);
 
   if (identityChoice.action === 'generate') {
     keys = await generateNewKeyPair();
@@ -165,7 +165,7 @@ export async function configureCommand(): Promise<void> {
         message: 'Enter private key (nsec or hex):',
         mask: '*'
       }
-    ]);
+    ] as any);
     const hex = resolveToHex(importAnswer.key);
     if (hex.length !== 64) {
         console.error('Invalid key length. Using generated key instead.');
@@ -225,7 +225,7 @@ export async function configureCommand(): Promise<void> {
       message: 'Do you want to edit the User Profile?',
       default: false
     }
-  ]);
+  ] as any);
 
   if (workspaceAnswers.editSoul) {
     const soulContent = await workspace.loadFile('SOUL.md');
@@ -236,7 +236,7 @@ export async function configureCommand(): Promise<void> {
         message: 'Edit SOUL.md',
         default: soulContent
       }
-    ]);
+    ] as any);
     await workspace.saveFile('SOUL.md', newSoul.content);
   }
 
@@ -249,7 +249,7 @@ export async function configureCommand(): Promise<void> {
         message: 'Edit USER.md',
         default: userContent
       }
-    ]);
+    ] as any);
     await workspace.saveFile('USER.md', newUser.content);
   }
 
