@@ -63,10 +63,11 @@ export interface RateLimitConfig {
 }
 
 export interface ChannelConfig {
-  type: 'nostr' | 'websocket' | 'stdio' | 'memory';
+  type: 'nostr' | 'websocket' | 'stdio' | 'memory' | 'telegram' | 'discord';
   relays?: string[];
   privateKey?: string;
   port?: number;
+  token?: string;
 }
 
 // Deprecated alias

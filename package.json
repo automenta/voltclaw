@@ -63,6 +63,9 @@
   "author": "VoltClaw Team",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.13.5",
+    "cheerio": "^1.2.0",
+    "discord.js": "^14.25.1",
     "glob": "^13.0.3",
     "inquirer": "^13.2.2",
     "node-cron": "^4.2.1",
@@ -72,6 +75,7 @@
     "playwright-core": "^1.58.2",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
+    "telegraf": "^4.16.3",
     "ws": "^8.19.0",
     "zod": "^3.23.8"
   },
