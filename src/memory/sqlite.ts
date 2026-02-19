@@ -3,7 +3,7 @@ import { open, type Database } from 'sqlite';
 import type {
   Store, Session, MemoryEntry, MemoryQuery,
   GraphNode, GraphEdge, GraphQuery,
-  PromptTemplate, PromptVersion
+  PromptTemplate, PromptVersion, ScheduledTask
 } from '../core/types.js';
 import { VOLTCLAW_DIR } from '../core/bootstrap.js';
 import fs from 'fs';
@@ -82,6 +82,13 @@ export class SQLiteStore implements Store {
         created_at INTEGER NOT NULL,
         PRIMARY KEY (template_id, version),
         FOREIGN KEY(template_id) REFERENCES prompt_templates(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        cron TEXT NOT NULL,
+        task TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_run INTEGER
       );
     `);
 
@@ -581,5 +588,41 @@ export class SQLiteStore implements Store {
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }));
+  }
+
+  // Scheduler Methods
+
+  async scheduleTask(task: ScheduledTask): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run(
+      `INSERT INTO scheduled_tasks (id, cron, task, created_at, last_run)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         cron = excluded.cron,
+         task = excluded.task,
+         last_run = excluded.last_run`,
+      task.id,
+      task.cron,
+      task.task,
+      task.createdAt,
+      task.lastRun
+    );
+  }
+
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    if (!this.db) await this.load();
+    const rows = await this.db!.all('SELECT * FROM scheduled_tasks ORDER BY created_at ASC');
+    return rows.map(row => ({
+      id: row.id,
+      cron: row.cron,
+      task: row.task,
+      createdAt: row.created_at,
+      lastRun: row.last_run
+    }));
+  }
+
+  async deleteScheduledTask(id: string): Promise<void> {
+    if (!this.db) await this.load();
+    await this.db!.run('DELETE FROM scheduled_tasks WHERE id = ?', id);
   }
 }

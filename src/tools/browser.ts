@@ -50,11 +50,24 @@ const EvalSchema = z.object({
   script: z.string().describe('JavaScript code to evaluate in the page context')
 });
 
+import path from 'path';
+import os from 'os';
+
+const USER_DATA_DIR = path.join(os.homedir(), '.voltclaw', 'browser_data');
+
 async function getPage(): Promise<Page> {
   if (!browserInstance) {
-    browserInstance = await chromium.launch({ headless: true });
+    browserInstance = await chromium.launchPersistentContext(USER_DATA_DIR, {
+      headless: true,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      viewport: { width: 1280, height: 800 }
+    });
   }
-  if (!pageInstance) {
+  // Persistent context has pages already, or we create one
+  const pages = browserInstance.pages();
+  if (pages.length > 0) {
+    pageInstance = pages[0];
+  } else {
     pageInstance = await browserInstance.newPage();
   }
   return pageInstance;
@@ -293,7 +306,54 @@ export const browserCloseTool: Tool = {
   }
 };
 
+export const browserLoginTool: Tool = {
+  name: 'browser_login',
+  description: 'Open browser in non-headless mode for manual login. Waits for you to close the window.',
+  parameters: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'URL to open for login' }
+    },
+    required: ['url']
+  },
+  execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
+    try {
+      const { url } = NavigateSchema.parse(args);
+
+      // Close existing headless instance
+      if (browserInstance) {
+        await browserInstance.close();
+        browserInstance = null;
+      }
+
+      // Launch headful
+      const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+        headless: false,
+        viewport: null
+      });
+
+      const page = context.pages().length ? context.pages()[0] : await context.newPage();
+      await page.goto(url);
+
+      // Wait for browser close
+      await new Promise<void>(resolve => {
+        context.on('close', () => resolve());
+        // Also resolve if user closes all pages?
+        page.on('close', () => {
+            // Check if context has other pages, if not, maybe we are done?
+            // Actually, context.on('close') handles the browser window closing.
+        });
+      });
+
+      return { status: 'success', message: 'Manual login session completed. Cookies saved.' };
+    } catch (error) {
+      return { error: formatToolError('browser_login', error, args) };
+    }
+  }
+};
+
 export const createBrowserTools = (): Tool[] => [
+  browserLoginTool,
   browserNavigateTool,
   browserClickTool,
   browserTypeTool,

@@ -7,8 +7,15 @@ export const VOLTCLAW_DIR = path.join(os.homedir(), '.voltclaw');
 export const CONFIG_FILE = path.join(VOLTCLAW_DIR, 'config.json');
 export const KEYS_FILE = path.join(VOLTCLAW_DIR, 'keys.json');
 
+export interface ChannelConfig {
+  type: 'nostr' | 'telegram' | 'discord';
+  token?: string;
+  relays?: string[];
+}
+
 export interface CLIConfig {
-  relays: string[];
+  relays: string[]; // Deprecated, use channels
+  channels: ChannelConfig[];
   llm: {
     provider: 'ollama' | 'openai' | 'anthropic';
     model: string;
@@ -42,6 +49,9 @@ const defaultConfig: CLIConfig = {
     'wss://nos.lol',
     'wss://relay.nostr.band'
   ],
+  channels: [
+    { type: 'nostr' } // Defaults use global relays for now, or we can move them here
+  ],
   llm: {
     provider: 'ollama',
     model: 'llama3.2'
@@ -68,13 +78,34 @@ const defaultConfig: CLIConfig = {
 };
 
 export async function loadConfig(): Promise<CLIConfig> {
+  let userConfig: Partial<CLIConfig> = {};
+
   try {
     const content = await fs.readFile(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(content) as Partial<CLIConfig>;
-    return { ...defaultConfig, ...config };
+    userConfig = JSON.parse(content) as Partial<CLIConfig>;
   } catch {
-    return defaultConfig;
+    // No file, proceed with defaults
   }
+
+  // Merge deeply? Or shallow.
+  // Careful with arrays.
+
+  // Start with default or user channels
+  const channels = userConfig.channels || [...defaultConfig.channels];
+
+  // Check ENV for tokens if not in config
+  if (process.env.TELEGRAM_TOKEN && !channels.some(c => c.type === 'telegram')) {
+      channels.push({ type: 'telegram', token: process.env.TELEGRAM_TOKEN });
+  }
+  if (process.env.DISCORD_TOKEN && !channels.some(c => c.type === 'discord')) {
+      channels.push({ type: 'discord', token: process.env.DISCORD_TOKEN });
+  }
+
+  return {
+    ...defaultConfig,
+    ...userConfig,
+    channels // Override channels with our logic
+  };
 }
 
 export async function loadOrGenerateKeys(): Promise<{ publicKey: string; secretKey: string; npub?: string; nsec?: string }> {

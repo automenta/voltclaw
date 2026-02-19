@@ -14,9 +14,11 @@ export function createPromptTools(manager: PromptManager): Tool[] {
         },
         required: ['id']
       },
-      execute: async (args: { id: string; version?: number }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const id = args.id as string;
+        const version = args.version as number | undefined;
         try {
-          const content = await manager.getPrompt(args.id, args.version);
+          const content = await manager.getPrompt(id, version);
           return { result: content };
         } catch (error) {
           return { error: String(error) };
@@ -35,10 +37,13 @@ export function createPromptTools(manager: PromptManager): Tool[] {
         },
         required: ['id', 'description', 'content']
       },
-      execute: async (args: { id: string; description: string; content: string }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const id = args.id as string;
+        const description = args.description as string;
+        const content = args.content as string;
         try {
-          await manager.createTemplate(args.id, args.description, args.content);
-          return { result: `Prompt template ${args.id} created successfully.` };
+          await manager.createTemplate(id, description, content);
+          return { result: `Prompt template ${id} created successfully.` };
         } catch (error) {
           return { error: String(error) };
         }
@@ -56,10 +61,13 @@ export function createPromptTools(manager: PromptManager): Tool[] {
         },
         required: ['id', 'content', 'changelog']
       },
-      execute: async (args: { id: string; content: string; changelog: string }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const id = args.id as string;
+        const content = args.content as string;
+        const changelog = args.changelog as string;
         try {
-          await manager.updatePrompt(args.id, args.content, args.changelog);
-          return { result: `Prompt ${args.id} updated successfully.` };
+          await manager.updatePrompt(id, content, changelog);
+          return { result: `Prompt ${id} updated successfully.` };
         } catch (error) {
           return { error: String(error) };
         }
@@ -76,9 +84,11 @@ export function createPromptTools(manager: PromptManager): Tool[] {
         },
         required: ['id', 'feedback']
       },
-      execute: async (args: { id: string; feedback: string }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const id = args.id as string;
+        const feedback = args.feedback as string;
         try {
-          const optimized = await manager.optimizePrompt(args.id, args.feedback);
+          const optimized = await manager.optimizePrompt(id, feedback);
           return { result: optimized };
         } catch (error) {
           return { error: String(error) };

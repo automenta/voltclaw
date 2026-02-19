@@ -12,6 +12,7 @@ import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
 import { dlqCommand } from './commands/dlq.js';
 import { configureCommand } from './commands/configure.js';
+import { onboardCommand } from './commands/onboard.js';
 import { askApproval } from './interactive.js';
 import path from 'path';
 
@@ -49,6 +50,7 @@ Commands:
   start               Start the agent daemon
   repl                Start interactive REPL (alias for start with interaction)
   configure           Run interactive configuration wizard
+  onboard             Design agent persona (System Prompt)
   config [key] [val]  View or edit configuration
   keys                Show current identity
   dm <npub> <msg>     Send a direct message
@@ -195,6 +197,10 @@ async function run(args: string[]): Promise<void> {
     }
     case 'configure': {
       await configureCommand();
+      break;
+    }
+    case 'onboard': {
+      await onboardCommand();
       break;
     }
     case 'config': {

@@ -1,6 +1,6 @@
 export interface VoltClawAgentOptions {
   llm?: LLMProvider | LLMConfig;
-  channel?: Channel | ChannelConfig;
+  channel?: Channel | ChannelConfig | (Channel | ChannelConfig)[];
   transport?: Channel | ChannelConfig; // Deprecated alias
   persistence?: Store | PersistenceConfig;
   call?: CallConfig;
@@ -63,10 +63,11 @@ export interface RateLimitConfig {
 }
 
 export interface ChannelConfig {
-  type: 'nostr' | 'websocket' | 'stdio' | 'memory';
+  type: 'nostr' | 'websocket' | 'stdio' | 'memory' | 'telegram' | 'discord';
   relays?: string[];
   privateKey?: string;
   port?: number;
+  token?: string;
 }
 
 // Deprecated alias
@@ -286,6 +287,18 @@ export interface Store {
   getPromptVersion?(templateId: string, version: number): Promise<PromptVersion | undefined>;
   savePromptVersion?(version: PromptVersion): Promise<void>;
   listPromptTemplates?(): Promise<PromptTemplate[]>;
+  // Scheduler methods
+  scheduleTask?(task: ScheduledTask): Promise<void>;
+  getScheduledTasks?(): Promise<ScheduledTask[]>;
+  deleteScheduledTask?(id: string): Promise<void>;
+}
+
+export interface ScheduledTask {
+  id: string;
+  cron: string;
+  task: string;
+  createdAt: number;
+  lastRun?: number;
 }
 
 export interface PromptTemplate {

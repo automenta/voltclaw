@@ -23,32 +23,30 @@ export function createDocumentationTools(manager: DocumentationManager): Tool[] 
         },
         required: ['toolName']
       },
-      execute: async (args: { toolName: string; sourcePath?: string }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const toolName = args.toolName as string;
+        const sourcePathArg = args.sourcePath as string | undefined;
         try {
           const cwd = process.cwd();
-          let sourcePath = args.sourcePath;
+          let sourcePath: string | undefined = sourcePathArg;
 
           if (!sourcePath) {
-            // Try standard location
-            const candidate = path.join(cwd, 'src', 'tools', `${args.toolName}.ts`);
+            const candidate = path.join(cwd, 'src', 'tools', `${toolName}.ts`);
             try {
                 await fs.access(candidate);
                 sourcePath = candidate;
             } catch {
-                return { error: `Source file not found for ${args.toolName} at ${candidate}. Please specify sourcePath.` };
+                return { error: `Source file not found for ${toolName} at ${candidate}. Please specify sourcePath.` };
             }
           }
 
-          const content = await fs.readFile(sourcePath, 'utf-8');
-          const docs = await manager.generateToolDocumentation(args.toolName, content);
+          const content = await fs.readFile(sourcePath!, 'utf-8');
+          const docs = await manager.generateToolDocumentation(toolName, content);
 
-          // Write to docs folder (ensure it exists)
-          // We can write to a 'docs' folder in CWD or VOLTCLAW_DIR.
-          // Let's use 'docs/tools' in CWD for project documentation.
           const docDir = path.join(cwd, 'docs', 'tools');
           await fs.mkdir(docDir, { recursive: true });
 
-          const docPath = path.join(docDir, `${args.toolName}.md`);
+          const docPath = path.join(docDir, `${toolName}.md`);
           await fs.writeFile(docPath, docs);
 
           return { result: `Documentation written to ${docPath}` };
@@ -78,15 +76,17 @@ export function createDocumentationTools(manager: DocumentationManager): Tool[] 
         },
         required: ['filePath']
       },
-      execute: async (args: { filePath: string; startLine?: number; endLine?: number }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const filePath = args.filePath as string;
+        const startLine = args.startLine as number | undefined;
+        const endLine = args.endLine as number | undefined;
         try {
-          const content = await fs.readFile(args.filePath, 'utf-8');
+          const content = await fs.readFile(filePath, 'utf-8');
           let snippet = content;
 
-          if (args.startLine !== undefined && args.endLine !== undefined) {
+          if (startLine !== undefined && endLine !== undefined) {
             const lines = content.split('\n');
-            // Adjust for 0-based index
-            snippet = lines.slice(args.startLine - 1, args.endLine).join('\n');
+            snippet = lines.slice(startLine - 1, endLine).join('\n');
           }
 
           const explanation = await manager.generateCodeExplanation(snippet);
