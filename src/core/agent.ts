@@ -23,6 +23,10 @@ import { ContextManager } from './context-manager.js';
 import { SelfTestFramework } from './self-test.js';
 import { DocumentationManager } from './documentation.js';
 import { PromptManager } from './prompt-manager.js';
+import { HeartbeatManager } from './heartbeat.js';
+import { SpawnManager, createSpawnTool } from './spawn.js';
+import { SkillLoader } from './skills.js';
+import { createBrowserTools } from '../tools/browser.js';
 
 import type {
   VoltClawAgentOptions,
@@ -98,6 +102,9 @@ export class VoltClawAgent {
   public readonly selfTest: SelfTestFramework;
   public readonly docs: DocumentationManager;
   public readonly prompts: PromptManager;
+  public readonly heartbeat: HeartbeatManager;
+  public readonly spawner: SpawnManager;
+  public readonly skills: SkillLoader;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -180,19 +187,28 @@ export class VoltClawAgent {
     this.selfTest = new SelfTestFramework(this);
     this.docs = new DocumentationManager(this);
     this.prompts = new PromptManager(this.store, this.llm);
+    this.heartbeat = new HeartbeatManager(this);
+    this.spawner = new SpawnManager(this);
+    this.skills = new SkillLoader();
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
+    // Default tools + user provided tools
+    const coreTools: Tool[] = [
+      createSelfTestTool(this.selfTest),
+      ...createDocumentationTools(this.docs),
+      ...createBrowserTools(), // Enable browser by default if installed
+      createSpawnTool(this.spawner)
+    ];
+
     if (options.tools) {
+      // If user provides tools, merge them
+      this.registerTools(coreTools);
       this.registerTools(options.tools);
     } else {
-      // If no tools provided, at least register code_exec if configured?
-      // No, caller usually provides createAllTools().
-      // But if user wants to override code_exec config while passing default tools, it's tricky.
-      // We'll trust user passed tools with config if they used createAllTools(config).
-      // However, we can register/overwrite code_exec if explicit config is provided in options.
+      this.registerTools(coreTools);
+
       if (options.rlm) {
-          // Inherit agent timeout if not specified in RLM config
           const rlmConfig = {
               rlmTimeoutMs: options.call?.timeoutMs,
               ...options.rlm
@@ -200,12 +216,6 @@ export class VoltClawAgent {
           this.registerTools([createCodeExecTool(rlmConfig)]);
       }
     }
-
-    // Register self-test tool
-    this.registerTools([createSelfTestTool(this.selfTest)]);
-
-    // Register documentation tools
-    this.registerTools(createDocumentationTools(this.docs));
 
     // Register prompt tools if store supports it
     if (this.store.savePromptTemplate) {
@@ -226,6 +236,13 @@ export class VoltClawAgent {
     if (this.store.addGraphNode) {
       this.registerTools(createGraphTools(this.graph));
     }
+
+    // Load dynamic skills
+    this.skills.loadSkills().then(tools => {
+        if (tools.length > 0) {
+            this.registerTools(tools);
+        }
+    });
 
     if (options.middleware) {
       this.middleware = options.middleware;
@@ -363,6 +380,10 @@ export class VoltClawAgent {
     await this.channel.start();
     await this.store.load?.();
 
+    // Start background managers
+    this.heartbeat.start();
+    this.spawner.setAgent(this);
+
     await this.pluginManager.initAll(this);
     await this.pluginManager.startAll(this);
 
@@ -395,6 +416,9 @@ export class VoltClawAgent {
       clearInterval(this.pruneTimer);
       this.pruneTimer = undefined;
     }
+
+    this.heartbeat.stop();
+    // Spawner tasks might still be running, but we stop accepting new ones or force terminate if needed.
 
     await this.pluginManager.stopAll(this);
     await this.channel.stop();

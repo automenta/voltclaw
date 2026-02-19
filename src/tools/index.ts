@@ -15,6 +15,7 @@ import { createSelfTestTool } from './self-test.js';
 import { createDocumentationTools } from './documentation.js';
 import { createPromptTools } from './prompt.js';
 import { createCodeExecTool, type CodeExecConfig } from './code_exec.js';
+import { createBrowserTools, browserNavigateTool, browserClickTool, browserTypeTool, browserExtractTool, browserScreenshotTool, browserCloseTool } from './browser.js';
 
 export { ToolRegistry, type ToolExecutor };
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParameterProperty };
@@ -25,6 +26,7 @@ export { readFileTool, writeFileTool, listFilesTool };
 export { restartTool };
 export { grepTool, globTool, editTool, executeTool };
 export { createAllTools, createGraphTools, createSelfTestTool, createDocumentationTools, createPromptTools, createCodeExecTool, type CodeExecConfig };
+export { createBrowserTools, browserNavigateTool, browserClickTool, browserTypeTool, browserExtractTool, browserScreenshotTool, browserCloseTool };
 
 export function createBuiltinTools(config?: { rlm?: CodeExecConfig }): Tool[] {
   return [
@@ -42,6 +44,7 @@ export function createBuiltinTools(config?: { rlm?: CodeExecConfig }): Tool[] {
     globTool,
     editTool,
     executeTool,
-    createCodeExecTool(config?.rlm)
+    createCodeExecTool(config?.rlm),
+    ...createBrowserTools()
   ];
 }
