@@ -299,6 +299,7 @@ export interface ScheduledTask {
   task: string;
   createdAt: number;
   lastRun?: number;
+  target?: string;
 }
 
 export interface PromptTemplate {

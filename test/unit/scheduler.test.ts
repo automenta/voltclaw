@@ -13,6 +13,9 @@ describe('Scheduler', () => {
     mockAgent = {
       getStore: () => store,
       query: vi.fn().mockResolvedValue('Task result'),
+      channel: {
+        send: vi.fn().mockResolvedValue(undefined)
+      }
     } as unknown as VoltClawAgent;
     scheduler = new Scheduler(mockAgent);
   });
@@ -34,5 +37,11 @@ describe('Scheduler', () => {
     await scheduler.cancel(id);
     const tasks = await scheduler.list();
     expect(tasks).toHaveLength(0);
+  });
+
+  it('should include target in scheduled task', async () => {
+    const id = await scheduler.schedule('* * * * *', 'Test task', 'pubkey123');
+    const tasks = await scheduler.list();
+    expect(tasks[0].target).toBe('pubkey123');
   });
 });

@@ -26,7 +26,7 @@ export class Scheduler {
     this.jobs.clear();
   }
 
-  async schedule(cronExpression: string, taskDescription: string): Promise<string> {
+  async schedule(cronExpression: string, taskDescription: string, target?: string): Promise<string> {
     if (!this.agent.getStore().scheduleTask) {
       throw new Error('Persistence store does not support scheduling');
     }
@@ -40,7 +40,8 @@ export class Scheduler {
       id,
       cron: cronExpression,
       task: taskDescription,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      target
     };
 
     await this.agent.getStore().scheduleTask!(task);
@@ -104,6 +105,20 @@ export class Scheduler {
 
         const result = await this.agent.query(`[Scheduled Task] ${task.task}`);
         console.log(`[Scheduler] Task ${task.id} completed:`, result);
+
+        if (task.target) {
+            // @ts-expect-error - Accessing private or protected channel, agent.channel is accessible
+            // Actually agent.channel is private in agent.ts
+            // We need a way to send message.
+            // agent.channel is private.
+            // But agent has no public send method except through query/handleTopLevel.
+            // We can add a public method or use `(agent as any).channel.send`.
+            // Let's check if we can add a method to agent.ts or use cast.
+            // Using cast for now as changing agent interface is a bigger change.
+            // Or better: Agent should have a `notify(target, content)` method.
+            // But let's stick to simple fix first.
+            await (this.agent as any).channel.send(task.target, result);
+        }
 
       } catch (error) {
         console.error(`[Scheduler] Task ${task.id} failed:`, error);
