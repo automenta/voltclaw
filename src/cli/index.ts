@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { VoltClawAgent, type LLMProvider } from '../core/index.js';
-import { NostrClient } from '../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
+import { MockLLM } from '../testing/index.js';
 import { FileStore } from '../memory/index.js';
 import { createAllTools } from '../tools/index.js';
 import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR } from './config.js';
@@ -33,6 +33,10 @@ function createLLMProvider(config: any): LLMProvider {
       return new AnthropicProvider({
         model: config.model,
         apiKey: config.apiKey ?? process.env.ANTHROPIC_API_KEY ?? ''
+      });
+    case 'mock':
+      return new MockLLM({
+        defaultResponse: 'This is a mock response from the offline provider. The agent logic is working, but no real LLM is connected.'
       });
     default:
       throw new Error(`Unknown LLM provider: ${config.provider}`);
@@ -77,16 +81,21 @@ async function oneShotQuery(
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
   const llm = createLLMProvider(config.llm);
-  const channel = new NostrClient({
-    relays: config.relays,
-    privateKey: keys.secretKey
+
+  // Use configured channels, injecting identity keys where needed
+  const channels = (config.channels || [{ type: 'nostr' }]).map(c => {
+    if (c.type === 'nostr' && !c.privateKey) {
+      return { ...c, privateKey: keys.secretKey, relays: c.relays || config.relays };
+    }
+    return c;
   });
+
   const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
   const tools = await createAllTools();
 
   const agent = new VoltClawAgent({
     llm,
-    channel,
+    channel: channels,
     persistence: store,
     call: options.recursive ? config.call : { ...config.call, maxDepth: 1 },
     plugins: config.plugins,

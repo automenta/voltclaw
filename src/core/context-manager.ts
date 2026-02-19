@@ -25,7 +25,7 @@ export class ContextManager {
   }
 
   async manageContext(messages: ChatMessage[]): Promise<ChatMessage[]> {
-    console.log(`manageContext: total=${messages.length}, max=${this.maxMessages}`);
+    // console.debug(`manageContext: total=${messages.length}, max=${this.maxMessages}`);
     if (messages.length <= this.maxMessages) {
       return messages;
     }
@@ -59,7 +59,7 @@ export class ContextManager {
 
     if (this.graph) {
         // We do this optimistically without awaiting to block execution minimally
-        console.log('Offloading to graph:', textToOffload.slice(0, 50));
+        // console.debug('Offloading to graph:', textToOffload.slice(0, 50));
         this.graph.extractAndStore(textToOffload).catch(e => console.error('Graph offload failed:', e));
     } else if (this.memory) {
         this.memory.storeMemory(textToOffload, 'episodic', ['conversation_history'], 3).catch(e => console.error('Memory offload failed:', e));

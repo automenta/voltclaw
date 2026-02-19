@@ -170,7 +170,9 @@ Create `~/.voltclaw/config.json`:
 
 ```json
 {
-  "relays": ["wss://relay.damus.io", "wss://nos.lol"],
+  "channels": [
+    { "type": "nostr", "relays": ["wss://relay.damus.io", "wss://nos.lol"] }
+  ],
   "llm": {
     "provider": "ollama",
     "model": "llama3.2",
@@ -192,6 +194,25 @@ Create `~/.voltclaw/config.json`:
 | Ollama | `ollama` | `OLLAMA_BASE_URL` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| Mock | `mock` | N/A |
+
+### Offline Usage
+
+You can run VoltClaw completely offline using the `mock` LLM provider and `stdio` channel. This is useful for testing the agent logic or developing new tools without an internet connection or LLM setup.
+
+Update your `~/.voltclaw/config.json`:
+
+```json
+{
+  "llm": {
+    "provider": "mock",
+    "model": "test"
+  },
+  "channels": [
+    { "type": "stdio" }
+  ]
+}
+```
 
 ## Recursive Calls
 
