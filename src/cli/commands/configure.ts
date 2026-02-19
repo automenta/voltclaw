@@ -1,9 +1,8 @@
 import inquirer from 'inquirer';
 import { generateNewKeyPair, resolveToHex, getPublicKeyFromSecret, nip19 } from '../../channels/nostr/index.js';
 import { Workspace } from '../../core/workspace.js';
-import { loadConfig, loadOrGenerateKeys, CONFIG_FILE, KEYS_FILE, VOLTCLAW_DIR, type CLIConfig } from '../config.js';
+import { loadConfig, CONFIG_FILE, KEYS_FILE, VOLTCLAW_DIR, type CLIConfig } from '../config.js';
 import fs from 'fs/promises';
-import path from 'path';
 
 export async function configureCommand(): Promise<void> {
   console.log('Welcome to VoltClaw Configuration Wizard\n');
@@ -47,24 +46,97 @@ export async function configureCommand(): Promise<void> {
       when: (answers: any) => answers.provider !== 'ollama',
       mask: '*'
     }
-  ] as any);
+  ]);
 
-  // 2. Channel Configuration (Nostr)
-  const channelAnswers = await inquirer.prompt([
+  // 2. Channel Configuration
+  const channels = [...(currentConfig.channels || [])];
+
+  // Ensure Nostr exists (default)
+  if (!channels.find(c => c.type === 'nostr')) {
+      channels.push({ type: 'nostr' });
+  }
+
+  // Configure Nostr Relays
+  const nostrAnswers = await inquirer.prompt([
     {
       type: 'input',
       name: 'relays',
       message: 'Enter Nostr Relays (comma separated):',
       default: currentConfig.relays.join(', ')
     }
-  ] as any);
+  ]);
+  const nostrRelays = nostrAnswers.relays.split(',').map((r: string) => r.trim()).filter((r: string) => r);
 
-  // 3. Identity Configuration
+  // Configure Telegram
+  const telegramAnswers = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'enable',
+      message: 'Enable Telegram integration?',
+      default: !!channels.find(c => c.type === 'telegram') || !!process.env.TELEGRAM_TOKEN
+    },
+    {
+      type: 'password',
+      name: 'token',
+      message: 'Enter Telegram Bot Token:',
+      when: (answers: any) => answers.enable && !process.env.TELEGRAM_TOKEN,
+      default: channels.find(c => c.type === 'telegram')?.token,
+      mask: '*'
+    }
+  ]);
+
+  if (telegramAnswers.enable) {
+      const existing = channels.findIndex(c => c.type === 'telegram');
+      const token = telegramAnswers.token || channels.find(c => c.type === 'telegram')?.token || process.env.TELEGRAM_TOKEN;
+      const config = { type: 'telegram' as const, token };
+      if (existing >= 0) {
+          channels[existing] = config;
+      } else {
+          channels.push(config);
+      }
+  } else {
+      const existing = channels.findIndex(c => c.type === 'telegram');
+      if (existing >= 0) channels.splice(existing, 1);
+  }
+
+  // Configure Discord
+  const discordAnswers = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'enable',
+      message: 'Enable Discord integration?',
+      default: !!channels.find(c => c.type === 'discord') || !!process.env.DISCORD_TOKEN
+    },
+    {
+      type: 'password',
+      name: 'token',
+      message: 'Enter Discord Bot Token:',
+      when: (answers: any) => answers.enable && !process.env.DISCORD_TOKEN,
+      default: channels.find(c => c.type === 'discord')?.token,
+      mask: '*'
+    }
+  ]);
+
+  if (discordAnswers.enable) {
+      const existing = channels.findIndex(c => c.type === 'discord');
+      const token = discordAnswers.token || channels.find(c => c.type === 'discord')?.token || process.env.DISCORD_TOKEN;
+      const config = { type: 'discord' as const, token };
+      if (existing >= 0) {
+          channels[existing] = config;
+      } else {
+          channels.push(config);
+      }
+  } else {
+      const existing = channels.findIndex(c => c.type === 'discord');
+      if (existing >= 0) channels.splice(existing, 1);
+  }
+
+  // 3. Identity Configuration (Nostr Only)
   let keys = { publicKey: '', secretKey: '', npub: '', nsec: '' };
   try {
     const existing = await fs.readFile(KEYS_FILE, 'utf-8');
     const parsed = JSON.parse(existing);
-    keys = { ...parsed, npub: resolveToHex(parsed.publicKey), nsec: resolveToHex(parsed.secretKey) }; // approximate, re-encoding needed really but config stores hex
+    keys = { ...parsed, npub: resolveToHex(parsed.publicKey), nsec: resolveToHex(parsed.secretKey) };
   } catch {
       // no keys
   }
@@ -73,14 +145,14 @@ export async function configureCommand(): Promise<void> {
     {
       type: 'list',
       name: 'action',
-      message: 'Identity Management:',
+      message: 'Nostr Identity Management:',
       choices: [
         { name: 'Keep existing identity', value: 'keep', disabled: !keys.secretKey },
         { name: 'Generate new identity', value: 'generate' },
         { name: 'Import private key (nsec/hex)', value: 'import' }
       ]
     }
-  ] as any);
+  ]);
 
   if (identityChoice.action === 'generate') {
     keys = await generateNewKeyPair();
@@ -93,9 +165,8 @@ export async function configureCommand(): Promise<void> {
         message: 'Enter private key (nsec or hex):',
         mask: '*'
       }
-    ] as any);
+    ]);
     const hex = resolveToHex(importAnswer.key);
-    // basic validation
     if (hex.length !== 64) {
         console.error('Invalid key length. Using generated key instead.');
         keys = await generateNewKeyPair();
@@ -117,9 +188,10 @@ export async function configureCommand(): Promise<void> {
   // Save Config & Keys
   const newConfig: CLIConfig = {
     ...currentConfig,
-    relays: channelAnswers.relays.split(',').map((r: string) => r.trim()).filter((r: string) => r),
+    relays: nostrRelays,
+    channels: channels,
     llm: {
-      provider: llmAnswers.provider,
+      provider: llmAnswers.provider as any,
       model: llmAnswers.model,
       baseUrl: llmAnswers.baseUrl,
       apiKey: llmAnswers.apiKey
@@ -128,8 +200,6 @@ export async function configureCommand(): Promise<void> {
 
   await fs.writeFile(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
   if (keys.secretKey) {
-      // If we imported, we might miss publicKey.
-      // But start command derives it.
       await fs.writeFile(KEYS_FILE, JSON.stringify({
           publicKey: keys.publicKey,
           secretKey: keys.secretKey
@@ -155,7 +225,7 @@ export async function configureCommand(): Promise<void> {
       message: 'Do you want to edit the User Profile?',
       default: false
     }
-  ] as any);
+  ]);
 
   if (workspaceAnswers.editSoul) {
     const soulContent = await workspace.loadFile('SOUL.md');
@@ -166,7 +236,7 @@ export async function configureCommand(): Promise<void> {
         message: 'Edit SOUL.md',
         default: soulContent
       }
-    ] as any);
+    ]);
     await workspace.saveFile('SOUL.md', newSoul.content);
   }
 
@@ -179,7 +249,7 @@ export async function configureCommand(): Promise<void> {
         message: 'Edit USER.md',
         default: userContent
       }
-    ] as any);
+    ]);
     await workspace.saveFile('USER.md', newUser.content);
   }
 
