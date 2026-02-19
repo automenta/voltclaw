@@ -481,6 +481,10 @@ export class VoltClawAgent {
     return this.store;
   }
 
+  public async send(to: string, content: string): Promise<void> {
+    await this.channel.send(to, content);
+  }
+
   async query(message: string, _options?: QueryOptions): Promise<string> {
     const session = this.store.get('self', true);
 
@@ -1330,22 +1334,31 @@ You are persistent, efficient, and recursive.`;
     if (this.permissions.admins?.includes(pubkey)) {
       return 'admin';
     }
-    // TODO: More role logic (user/agent map)
-    return 'user';
+    if (this.permissions.agents?.includes(pubkey)) {
+      return 'agent';
+    }
+    if (this.permissions.users?.includes(pubkey)) {
+      return 'user';
+    }
+
+    return 'user'; // Default role
   }
 
   private checkPermission(tool: Tool, role: Role): boolean {
     if (role === 'admin') return true;
 
-    if (tool.requiredRoles) {
+    // If tool specifies required roles, strictly enforce them
+    if (tool.requiredRoles && tool.requiredRoles.length > 0) {
       return tool.requiredRoles.includes(role);
     }
 
-    // Default policy if no roles specified
+    // If no specific roles required, fall back to global policy
+    // 'allow_all' (default) means anyone can use tools that don't have specific requirements
     if (this.permissions.policy === 'deny_all') {
       return false;
     }
-    return true; // Allow all by default
+
+    return true;
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {

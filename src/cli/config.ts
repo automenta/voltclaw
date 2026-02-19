@@ -40,6 +40,12 @@ export interface CLIConfig {
     type: 'sqlite' | 'file';
     path?: string;
   };
+  permissions?: {
+    admins?: string[];
+    users?: string[];
+    agents?: string[];
+    policy?: 'allow_all' | 'deny_all';
+  };
   plugins?: string[];
 }
 
@@ -73,6 +79,9 @@ const defaultConfig: CLIConfig = {
   persistence: {
     type: 'sqlite',
     path: path.join(VOLTCLAW_DIR, 'voltclaw.db')
+  },
+  permissions: {
+    policy: 'allow_all'
   },
   plugins: []
 };

@@ -88,9 +88,16 @@ export class SQLiteStore implements Store {
         cron TEXT NOT NULL,
         task TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        last_run INTEGER
+        last_run INTEGER,
+        target TEXT
       );
     `);
+
+    try {
+      await this.db.exec('ALTER TABLE scheduled_tasks ADD COLUMN target TEXT');
+    } catch {
+      // Ignore if column already exists
+    }
 
     try {
       await this.db.exec('ALTER TABLE memories ADD COLUMN embedding TEXT');
@@ -304,14 +311,15 @@ export class SQLiteStore implements Store {
   }
 
   private cosineSimilarity(a: number[], b?: number[]): number {
-    if (!b || a.length !== b.length) return -1;
+    const vecB = b;
+    if (!vecB || a.length !== vecB.length) return -1;
     let dot = 0;
     let normA = 0;
     let normB = 0;
     for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      dot += a[i]! * vecB[i]!;
+      normA += a[i]! * a[i]!;
+      normB += vecB[i]! * vecB[i]!;
     }
     if (normA === 0 || normB === 0) return 0;
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
@@ -349,11 +357,14 @@ export class SQLiteStore implements Store {
     return rows.map(row => ({
       id: row.id,
       type: row.type as MemoryEntry['type'],
+      level: row.level ?? 1,
+      lastAccess: row.last_access ?? row.timestamp,
       content: row.content,
       embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
       tags: JSON.parse(row.tags || '[]'),
       importance: row.importance,
       timestamp: row.timestamp,
+      expiresAt: row.expires_at,
       contextId: row.context_id,
       metadata: JSON.parse(row.metadata || '{}')
     }));
@@ -595,17 +606,19 @@ export class SQLiteStore implements Store {
   async scheduleTask(task: ScheduledTask): Promise<void> {
     if (!this.db) await this.load();
     await this.db!.run(
-      `INSERT INTO scheduled_tasks (id, cron, task, created_at, last_run)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO scheduled_tasks (id, cron, task, created_at, last_run, target)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          cron = excluded.cron,
          task = excluded.task,
-         last_run = excluded.last_run`,
+         last_run = excluded.last_run,
+         target = excluded.target`,
       task.id,
       task.cron,
       task.task,
       task.createdAt,
-      task.lastRun
+      task.lastRun,
+      task.target
     );
   }
 
@@ -617,7 +630,8 @@ export class SQLiteStore implements Store {
       cron: row.cron,
       task: row.task,
       createdAt: row.created_at,
-      lastRun: row.last_run
+      lastRun: row.last_run,
+      target: row.target
     }));
   }
 

@@ -75,7 +75,7 @@ Please review these tasks and execute any that are relevant or due.
 If a task requires long-running work, use the 'spawn' tool.
 Report the status of each task briefly.`;
 
-      await this.agent.query(prompt, { source: 'heartbeat' });
+      await this.agent.query(prompt, { metadata: { source: 'heartbeat' } });
       this.consecutiveFailures = 0;
 
     } catch (error) {

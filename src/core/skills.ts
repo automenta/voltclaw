@@ -9,8 +9,8 @@ export class SkillLoader {
   private eventHandlers: Map<string, Set<(tool: Tool) => void>> = new Map();
   private _watcher?: FSWatcher;
 
-  constructor() {
-    this.skillsDir = path.join(VOLTCLAW_DIR, 'skills');
+  constructor(skillsDir?: string) {
+    this.skillsDir = skillsDir || path.join(VOLTCLAW_DIR, 'skills');
   }
 
   async ensureExists(): Promise<void> {

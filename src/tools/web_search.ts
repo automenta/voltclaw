@@ -36,6 +36,7 @@ async function fallbackSearch(query: string, limit: number): Promise<any[]> {
           snippet: snippetEl.text().trim()
         });
       }
+      return true;
     });
 
     return results;

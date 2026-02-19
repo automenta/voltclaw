@@ -1,9 +1,13 @@
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type BrowserContext, type Page } from 'playwright';
 import { z } from 'zod';
 import type { Tool, ToolCallResult } from './types.js';
 import { formatToolError } from './errors.js';
 
-let browserInstance: Browser | null = null;
+// Declare browser globals for evaluation context
+declare const window: any;
+declare const document: any;
+
+let browserInstance: BrowserContext | null = null;
 let pageInstance: Page | null = null;
 
 // Ensure browser is closed on process exit
@@ -66,11 +70,11 @@ async function getPage(): Promise<Page> {
   // Persistent context has pages already, or we create one
   const pages = browserInstance.pages();
   if (pages.length > 0) {
-    pageInstance = pages[0];
+    pageInstance = pages[0] as Page;
   } else {
     pageInstance = await browserInstance.newPage();
   }
-  return pageInstance;
+  return pageInstance!;
 }
 
 export const browserNavigateTool: Tool = {
@@ -216,16 +220,16 @@ export const browserScrollTool: Tool = {
 
       switch (direction) {
         case 'top':
-          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.evaluate(() => (window as any).scrollTo(0, 0));
           break;
         case 'bottom':
-          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          await page.evaluate(() => (window as any).scrollTo(0, (document as any).body.scrollHeight));
           break;
         case 'up':
-          await page.evaluate((y) => window.scrollBy(0, -(y || 500)), amount);
+          await page.evaluate((y) => (window as any).scrollBy(0, -(y || 500)), amount);
           break;
         case 'down':
-          await page.evaluate((y) => window.scrollBy(0, y || 500), amount);
+          await page.evaluate((y) => (window as any).scrollBy(0, y || 500), amount);
           break;
       }
       return { status: 'success', direction };
@@ -332,7 +336,7 @@ export const browserLoginTool: Tool = {
         viewport: null
       });
 
-      const page = context.pages().length ? context.pages()[0] : await context.newPage();
+      const page = (context.pages().length ? context.pages()[0] : await context.newPage()) as Page;
       await page.goto(url);
 
       // Wait for browser close

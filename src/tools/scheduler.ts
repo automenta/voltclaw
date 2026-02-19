@@ -5,7 +5,8 @@ import { formatToolError } from './errors.js';
 
 const ScheduleTaskSchema = z.object({
   cron: z.string().describe('Cron expression (e.g. "0 0 * * *")'),
-  task: z.string().describe('Task description')
+  task: z.string().describe('Task description'),
+  target: z.string().optional().describe('Pubkey to notify (optional)')
 });
 
 const CancelTaskSchema = z.object({
@@ -21,14 +22,15 @@ export const createSchedulerTools = (scheduler: Scheduler): Tool[] => {
         type: 'object',
         properties: {
           cron: { type: 'string', description: 'Cron expression (e.g. "0 9 * * *" for daily at 9am)' },
-          task: { type: 'string', description: 'Description of the task to perform' }
+          task: { type: 'string', description: 'Description of the task to perform' },
+          target: { type: 'string', description: 'Target pubkey to notify (optional)' }
         },
         required: ['cron', 'task']
       },
       execute: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
         try {
-          const { cron, task } = ScheduleTaskSchema.parse(args);
-          const id = await scheduler.schedule(cron, task);
+          const { cron, task, target } = ScheduleTaskSchema.parse(args);
+          const id = await scheduler.schedule(cron, task, target);
           return { status: 'success', id, message: `Task scheduled with ID: ${id}` };
         } catch (error) {
           return { error: formatToolError('schedule_task', error, args) };
