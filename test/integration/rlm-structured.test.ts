@@ -72,7 +72,7 @@ describe('RLM Structured Integration', () => {
                 }
 
                 // 2. Child Agent: receives subtask
-                if (system.includes('FOCUSED sub-agent')) {
+                if (system.includes('Depth: 1')) {
                     return { content: '{"foo": "bar", "num": 123}' };
                 }
 

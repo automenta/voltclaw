@@ -35,12 +35,11 @@ describe('Parallel Call Integration', () => {
             }
 
             // Subtask handling
-            if (content === 'Begin.') {
-                const system = messages.find(m => m.role === 'system');
-                if (system && system.content?.includes('Task A')) {
+            if (content.includes('Task:')) {
+                if (content.includes('Task A')) {
                     return 'Result A';
                 }
-                if (system && system.content?.includes('Task B')) {
+                if (content.includes('Task B')) {
                     return 'Result B';
                 }
             }

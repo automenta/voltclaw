@@ -770,13 +770,6 @@ export class VoltClawAgent {
       ? '\nMUST produce final concise answer NOW. No further calls.'
       : '';
 
-    // Use template or fallback
-    const basePrompt = this.systemPromptTemplate || `You are VoltClaw (depth {depth}/{maxDepth}).`;
-
-    // We need to inject depth specific context into the subtask prompt
-    // Ideally we use buildSystemPrompt but customized for subtask
-    // For now, let's stick to a simpler subtask prompt to keep context low
-
     let contextInstruction = '';
     const memoryMatch = contextSummary.match(/RLM Context stored in memory\. Use memory_recall\(id='(.*?)'\)/);
     if (memoryMatch) {
@@ -789,8 +782,8 @@ export class VoltClawAgent {
         schemaInstruction = `\n\nOUTPUT REQUIREMENT:\nYou MUST produce a valid JSON object matching this schema:\n${schemaStr}\n\nDo not wrap the JSON in markdown code blocks. Just raw JSON.`;
     }
 
-    const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
-Task: ${task}
+    const systemPrompt = this.buildSystemPrompt(depth);
+    const userPrompt = `Task: ${task}
 Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${mustFinish}`;
 
     // Initialize session state for subtask
@@ -803,7 +796,7 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'Begin.' }
+      { role: 'user', content: userPrompt }
     ];
 
     try {
@@ -1208,6 +1201,23 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
     });
   }
 
+  private getRLMGuide(toolNames: string[]): string {
+    if (!toolNames.includes('code_exec')) {
+      return '';
+    }
+    return `
+RLM ENVIRONMENT:
+- You have a persistent JavaScript sandbox via 'code_exec'.
+- Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
+- Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
+- Use 'rlm_shared_set(key, value)', 'rlm_shared_get(key)', 'rlm_shared_increment(key, delta)', 'rlm_shared_push(key, value)' to access shared memory across the recursion tree.
+- Use 'rlm_map(items, mapper)', 'rlm_filter(items, predicate)', 'rlm_reduce(items, reducer, initial)' for functional operations over sub-agents.
+- Use 'rlm_trace()' to inspect the call stack.
+- Use 'load_context(id)' to retrieve specific memories by ID.
+- Console logs (console.log) are captured and returned to you for debugging.
+`;
+  }
+
   private buildSystemPrompt(depth: number): string {
     const toolNames = Array.from(this.tools.keys())
       .filter(name => {
@@ -1222,19 +1232,7 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
     const toolNamesStr = toolNames.join(', ');
 
     // Inject RLM Environment Guide if code_exec is available
-    let rlmGuide = '';
-    if (toolNames.includes('code_exec')) {
-        rlmGuide = `
-RLM ENVIRONMENT:
-- You have a persistent JavaScript sandbox via 'code_exec'.
-- Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
-- Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
-- Use 'rlm_shared_set(key, value)' and 'rlm_shared_get(key)' to access shared memory across the recursion tree.
-- Use 'rlm_trace()' to inspect the call stack.
-- Use 'load_context(id)' to retrieve specific memories by ID.
-- Console logs (console.log) are captured and returned to you for debugging.
-`;
-    }
+    const rlmGuide = this.getRLMGuide(toolNames);
 
     let template = this.systemPromptTemplate;
     if (!template) {
