@@ -24,6 +24,8 @@ export class SpawnManager extends EventEmitter {
     this.agent = agent;
   }
 
+  private activePromises: Map<string, Promise<void>> = new Map();
+
   async spawnTask(task: string, context?: Record<string, unknown>): Promise<string> {
     if (!this.agent) throw new Error('SpawnManager not initialized with agent');
 
@@ -36,10 +38,13 @@ export class SpawnManager extends EventEmitter {
     };
     this.tasks.set(id, taskInfo);
 
-    // Run async without awaiting
-    this.runTask(id, task, context).catch(err => {
+    const promise = this.runTask(id, task, context).catch(err => {
       console.error(`Spawned task ${id} failed unhandled:`, err);
+    }).finally(() => {
+      this.activePromises.delete(id);
     });
+
+    this.activePromises.set(id, promise);
 
     return id;
   }
@@ -61,6 +66,10 @@ export class SpawnManager extends EventEmitter {
       taskInfo.error = error instanceof Error ? error.message : String(error);
       this.emit('taskFailed', taskInfo);
     }
+  }
+
+  async waitForAll(): Promise<void> {
+    await Promise.allSettled(this.activePromises.values());
   }
 
   getTasks(): SpawnedTask[] {

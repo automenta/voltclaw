@@ -237,12 +237,16 @@ export class VoltClawAgent {
       this.registerTools(createGraphTools(this.graph));
     }
 
-    // Load dynamic skills
+    // Load dynamic skills and start watching
     this.skills.loadSkills().then(tools => {
         if (tools.length > 0) {
             this.registerTools(tools);
         }
     });
+    this.skills.on('skillLoaded', (tool) => {
+        this.registerTools([tool]);
+    });
+    this.skills.startWatching();
 
     if (options.middleware) {
       this.middleware = options.middleware;
@@ -418,7 +422,8 @@ export class VoltClawAgent {
     }
 
     this.heartbeat.stop();
-    // Spawner tasks might still be running, but we stop accepting new ones or force terminate if needed.
+    this.skills.stopWatching();
+    await this.spawner.waitForAll();
 
     await this.pluginManager.stopAll(this);
     await this.channel.stop();

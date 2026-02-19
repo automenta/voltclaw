@@ -15,8 +15,7 @@ describe('SpawnManager', () => {
     expect(manager.getTasks()).toHaveLength(1);
     expect(manager.getTasks()[0].task).toBe('Test Task');
 
-    // Wait for async execution
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await manager.waitForAll();
 
     expect(mockAgent.query).toHaveBeenCalledWith(expect.stringContaining('Test Task'));
     expect(manager.getTasks()[0].status).toBe('completed');
@@ -30,7 +29,7 @@ describe('SpawnManager', () => {
     const manager = new SpawnManager(failingAgent);
     const id = await manager.spawnTask('Test Task');
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await manager.waitForAll();
 
     expect(manager.getTasks()[0].status).toBe('failed');
     expect(manager.getTasks()[0].error).toBe('Failed');

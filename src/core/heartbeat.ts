@@ -1,4 +1,4 @@
-import { readFile } from 'fs/promises';
+import { readFile, appendFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { VoltClawAgent } from './agent.js';
 import { WORKSPACE_DIR } from './workspace.js';
@@ -8,6 +8,7 @@ export class HeartbeatManager {
   private intervalMs: number;
   private timer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private consecutiveFailures: number = 0;
 
   constructor(agent: VoltClawAgent, intervalMs: number = 30 * 60 * 1000) { // Default 30 minutes
     this.agent = agent;
@@ -28,6 +29,19 @@ export class HeartbeatManager {
     }
   }
 
+  private async logError(error: unknown): Promise<void> {
+    const logsDir = join(WORKSPACE_DIR, 'logs');
+    const logFile = join(logsDir, 'heartbeat_errors.log');
+
+    try {
+      await mkdir(logsDir, { recursive: true });
+      const message = `[${new Date().toISOString()}] Heartbeat Error: ${error instanceof Error ? error.message : String(error)}\n`;
+      await appendFile(logFile, message);
+    } catch (e) {
+      console.error('Failed to write to heartbeat log:', e);
+    }
+  }
+
   private async executeHeartbeat(): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
@@ -38,7 +52,6 @@ export class HeartbeatManager {
       try {
         content = await readFile(heartbeatFile, 'utf-8');
       } catch (e) {
-        // File might not exist, which is fine
         return;
       }
 
@@ -54,8 +67,6 @@ export class HeartbeatManager {
 
       console.log(`Running heartbeat tasks: ${tasks.join(', ')}`);
 
-      // Execute tasks sequentially or in parallel?
-      // For simplicity, execute as a single query to the agent
       const prompt = `System Heartbeat Triggered.
 The following periodic tasks are defined in HEARTBEAT.md:
 ${tasks.map(t => `- ${t}`).join('\n')}
@@ -65,9 +76,15 @@ If a task requires long-running work, use the 'spawn' tool.
 Report the status of each task briefly.`;
 
       await this.agent.query(prompt, { source: 'heartbeat' });
+      this.consecutiveFailures = 0;
 
     } catch (error) {
-      console.error('Heartbeat execution failed:', error);
+      this.consecutiveFailures++;
+      console.error(`Heartbeat execution failed (attempt ${this.consecutiveFailures}):`, error);
+      await this.logError(error);
+
+      // Retry logic for first few failures with backoff if we were using a more complex scheduler
+      // Here we just log and wait for next interval
     } finally {
       this.isRunning = false;
     }
