@@ -15,9 +15,10 @@ export function createSelfTestTool(framework: SelfTestFramework): Tool {
       },
       required: ['target']
     },
-    execute: async (args: { target: string }) => {
+    execute: async (args: Record<string, unknown>) => {
+      const target = args.target as string;
       try {
-        const plan = await framework.generateTests(args.target);
+        const plan = await framework.generateTests(target);
         const report = await framework.runTests(plan);
         return {
           result: JSON.stringify(report, null, 2),

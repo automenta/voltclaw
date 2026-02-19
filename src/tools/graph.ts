@@ -16,9 +16,10 @@ export function createGraphTools(manager: GraphManager): Tool[] {
         },
         required: ['text']
       },
-      execute: async (args: { text: string }) => {
+      execute: async (args: Record<string, unknown>) => {
+        const text = args.text as string;
         try {
-          await manager.extractAndStore(args.text);
+          await manager.extractAndStore(text);
           return { result: 'Graph extraction successful' };
         } catch (error) {
           return { error: String(error) };
@@ -38,8 +39,9 @@ export function createGraphTools(manager: GraphManager): Tool[] {
         },
         required: ['nodeId']
       },
-      execute: async (args: { nodeId: string }) => {
-        const result = await manager.getNeighbors(args.nodeId);
+      execute: async (args: Record<string, unknown>) => {
+        const nodeId = args.nodeId as string;
+        const result = await manager.getNeighbors(nodeId);
         return {
           nodes: result.nodes.map(n => `${n.id} (${n.label})`),
           edges: result.edges.map(e => `${e.source} --[${e.relation}]--> ${e.target}`)
@@ -59,8 +61,9 @@ export function createGraphTools(manager: GraphManager): Tool[] {
         },
         required: ['query']
       },
-      execute: async (args: { query: string }) => {
-        const nodes = await manager.search(args.query);
+      execute: async (args: Record<string, unknown>) => {
+        const query = args.query as string;
+        const nodes = await manager.search(query);
         return {
           matches: nodes.map(n => ({ id: n.id, label: n.label }))
         };
@@ -83,13 +86,13 @@ export function createGraphTools(manager: GraphManager): Tool[] {
         },
         required: ['nodeId']
       },
-      execute: async (args: { nodeId: string; depth?: number }) => {
-        const { nodes, edges } = await manager.getSubgraph(args.nodeId, args.depth ?? 1);
+      execute: async (args: Record<string, unknown>) => {
+        const nodeId = args.nodeId as string;
+        const depth = (args.depth as number) ?? 1;
+        const { nodes, edges } = await manager.getSubgraph(nodeId, depth);
 
         let mermaid = 'graph TD\n';
         for (const node of nodes) {
-            // Sanitize IDs for mermaid (remove spaces/special chars if needed, but assuming simple IDs for now)
-            // Just displaying label in box
             mermaid += `    ${node.id}["${node.label}"]\n`;
         }
         for (const edge of edges) {

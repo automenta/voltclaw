@@ -1,11 +1,13 @@
-import { VoltClawAgent } from './agent.js';
 import { VOLTCLAW_DIR } from './bootstrap.js';
 import fs from 'fs/promises';
+import type { FSWatcher } from 'fs';
 import path from 'path';
 import { type Tool } from './types.js';
 
-export class SkillManager {
+export class SkillLoader {
   private skillsDir: string;
+  private eventHandlers: Map<string, Set<(tool: Tool) => void>> = new Map();
+  private _watcher?: FSWatcher;
 
   constructor() {
     this.skillsDir = path.join(VOLTCLAW_DIR, 'skills');
@@ -41,9 +43,6 @@ export class SkillManager {
   async installSkill(url: string, name?: string): Promise<string> {
     await this.ensureExists();
 
-    // Simple download logic
-    // We expect a direct URL to a raw JS/TS file
-
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch skill: ${response.statusText}`);
@@ -55,5 +54,65 @@ export class SkillManager {
 
     await fs.writeFile(filePath, content);
     return filename;
+  }
+
+  on(event: 'skillLoaded', handler: (tool: Tool) => void): void {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+  }
+
+  off(event: 'skillLoaded', handler: (tool: Tool) => void): void {
+    this.eventHandlers.get(event)?.delete(handler);
+  }
+
+  private emit(event: 'skillLoaded', tool: Tool): void {
+    const handlers = this.eventHandlers.get(event);
+    if (handlers) {
+      for (const handler of handlers) {
+        handler(tool);
+      }
+    }
+  }
+
+  async startWatching(): Promise<void> {
+    try {
+      await this.ensureExists();
+      
+      const fsSync = await import('fs');
+      this._watcher = fsSync.watch(this.skillsDir, async (eventType, filename) => {
+        if (filename && (filename.endsWith('.js') || filename.endsWith('.ts'))) {
+          if (eventType === 'rename' || eventType === 'change') {
+            try {
+              const filePath = path.join(this.skillsDir, filename);
+              const exists = await fs.access(filePath).then(() => true).catch(() => false);
+              if (exists) {
+                const module = await import(filePath + '?t=' + Date.now());
+                let tool: Tool | undefined;
+                if (module.default && typeof module.default === 'object' && 'name' in module.default && 'execute' in module.default) {
+                  tool = module.default as Tool;
+                } else if (module.createTool && typeof module.createTool === 'function') {
+                  tool = module.createTool();
+                }
+                if (tool) {
+                  this.emit('skillLoaded', tool);
+                }
+              }
+            } catch {
+              // Silently ignore errors during hot reload
+            }
+          }
+        }
+      });
+    } catch {
+      // Watching is optional, don't fail if it doesn't work
+    }
+  }
+
+  stopWatching(): void {
+    if (this._watcher) {
+      this._watcher.close();
+    }
   }
 }

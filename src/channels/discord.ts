@@ -1,5 +1,5 @@
-import { Client, GatewayIntentBits } from 'discord.js';
-import type { Channel, MessageHandler, EventHandler, MessageMeta } from '../../core/types.js';
+import { Client, GatewayIntentBits, type Message } from 'discord.js';
+import type { Channel, MessageHandler, EventHandler, MessageMeta } from '../core/types.js';
 
 export interface DiscordConfig {
   token: string;
@@ -34,12 +34,10 @@ export class DiscordChannel implements Channel {
         resolve();
       });
 
-      this.client.on('messageCreate', async (message) => {
+      this.client.on('messageCreate', async (message: Message) => {
         if (message.author.bot) return;
         if (!this.messageHandler) return;
 
-        // Use channelId as 'from' for direct replies
-        // This ensures shared session context for the channel
         const from = message.channelId;
         const content = message.content;
 
@@ -68,7 +66,7 @@ export class DiscordChannel implements Channel {
   async send(to: string, content: string): Promise<void> {
     try {
       const channel = await this.client.channels.fetch(to);
-      if (channel && channel.isTextBased()) {
+      if (channel && 'send' in channel && typeof channel.send === 'function') {
         await channel.send(content);
       }
     } catch (error) {
