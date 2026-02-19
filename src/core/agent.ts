@@ -481,6 +481,10 @@ export class VoltClawAgent {
     return this.store;
   }
 
+  public async send(to: string, content: string): Promise<void> {
+    await this.channel.send(to, content);
+  }
+
   async query(message: string, _options?: QueryOptions): Promise<string> {
     const session = this.store.get('self', true);
 
@@ -1330,8 +1334,14 @@ You are persistent, efficient, and recursive.`;
     if (this.permissions.admins?.includes(pubkey)) {
       return 'admin';
     }
-    // TODO: More role logic (user/agent map)
-    return 'user';
+    if (this.permissions.agents?.includes(pubkey)) {
+      return 'agent';
+    }
+    if (this.permissions.users?.includes(pubkey)) {
+      return 'user';
+    }
+
+    return 'user'; // Default role
   }
 
   private checkPermission(tool: Tool, role: Role): boolean {

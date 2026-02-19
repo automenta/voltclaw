@@ -107,17 +107,7 @@ export class Scheduler {
         console.log(`[Scheduler] Task ${task.id} completed:`, result);
 
         if (task.target) {
-            // @ts-expect-error - Accessing private or protected channel, agent.channel is accessible
-            // Actually agent.channel is private in agent.ts
-            // We need a way to send message.
-            // agent.channel is private.
-            // But agent has no public send method except through query/handleTopLevel.
-            // We can add a public method or use `(agent as any).channel.send`.
-            // Let's check if we can add a method to agent.ts or use cast.
-            // Using cast for now as changing agent interface is a bigger change.
-            // Or better: Agent should have a `notify(target, content)` method.
-            // But let's stick to simple fix first.
-            await (this.agent as any).channel.send(task.target, result);
+            await this.agent.send(task.target, result);
         }
 
       } catch (error) {

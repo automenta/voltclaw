@@ -29,6 +29,8 @@ export type Role = 'admin' | 'user' | 'agent' | 'subagent';
 
 export interface PermissionConfig {
   admins?: string[]; // Public keys of admins
+  users?: string[]; // Public keys of users
+  agents?: string[]; // Public keys of agents
   policy?: 'allow_all' | 'deny_all'; // Default policy if no role specified on tool
 }
 
