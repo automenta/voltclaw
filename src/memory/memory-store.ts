@@ -1,9 +1,10 @@
-import type { Store, Session, SubTaskInfo, ChatMessage } from '../core/types.js';
+import type { Store, Session, SubTaskInfo, ChatMessage, ScheduledTask } from '../core/types.js';
 
-export type { Store, Session, SubTaskInfo, ChatMessage };
+export type { Store, Session, SubTaskInfo, ChatMessage, ScheduledTask };
 
 export class MemoryStore implements Store {
   private data: Record<string, Session> = {};
+  private tasks: ScheduledTask[] = [];
   private readonly maxHistory: number;
 
   constructor(maxHistory = 60) {
@@ -43,6 +44,23 @@ export class MemoryStore implements Store {
     if (session.history.length > this.maxHistory) {
       session.history = session.history.slice(-this.maxHistory);
     }
+  }
+
+  async scheduleTask(task: ScheduledTask): Promise<void> {
+    const index = this.tasks.findIndex(t => t.id === task.id);
+    if (index >= 0) {
+      this.tasks[index] = task;
+    } else {
+      this.tasks.push(task);
+    }
+  }
+
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return [...this.tasks];
+  }
+
+  async deleteScheduledTask(id: string): Promise<void> {
+    this.tasks = this.tasks.filter(t => t.id !== id);
   }
 
   private createSession(): Session {

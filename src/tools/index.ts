@@ -16,6 +16,8 @@ import { createDocumentationTools } from './documentation.js';
 import { createPromptTools } from './prompt.js';
 import { createCodeExecTool, type CodeExecConfig } from './code_exec.js';
 import { createBrowserTools, browserNavigateTool, browserClickTool, browserTypeTool, browserExtractTool, browserScreenshotTool, browserCloseTool } from './browser.js';
+import { createSchedulerTools } from './scheduler.js';
+import { webSearchTool } from './web_search.js';
 
 export { ToolRegistry, type ToolExecutor };
 export type { Tool, ToolCallResult, ToolDefinition, ToolParameters, ToolParameterProperty };
@@ -27,9 +29,12 @@ export { restartTool };
 export { grepTool, globTool, editTool, executeTool };
 export { createAllTools, createGraphTools, createSelfTestTool, createDocumentationTools, createPromptTools, createCodeExecTool, type CodeExecConfig };
 export { createBrowserTools, browserNavigateTool, browserClickTool, browserTypeTool, browserExtractTool, browserScreenshotTool, browserCloseTool };
+export { createSchedulerTools };
+export { webSearchTool };
 
 export function createBuiltinTools(config?: { rlm?: CodeExecConfig }): Tool[] {
   return [
+    webSearchTool,
     timeTool,
     dateTool,
     sleepTool,

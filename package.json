@@ -65,8 +65,11 @@
   "dependencies": {
     "glob": "^13.0.3",
     "inquirer": "^13.2.2",
+    "node-cron": "^4.2.1",
     "nostr-relaypool": "^0.6.30",
     "nostr-tools": "^2.23.1",
+    "playwright": "^1.58.2",
+    "playwright-core": "^1.58.2",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "ws": "^8.19.0",
@@ -75,10 +78,9 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/node": "^25.2.3",
+    "@types/node-cron": "^3.0.11",
     "@types/ws": "^8.18.1",
     "eslint": "^9.18.0",
-    "playwright": "^1.58.2",
-    "playwright-core": "^1.58.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0",
     "vitest": "^3.0.0"

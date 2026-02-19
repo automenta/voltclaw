@@ -3,6 +3,7 @@ export { bootstrap, loadSystemPrompt, VOLTCLAW_DIR, TOOLS_DIR };
 
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { NostrClient } from '../channels/nostr/index.js';
+import { CompositeChannel } from '../channels/composite.js';
 import { FileStore } from '../memory/index.js';
 import { SQLiteStore } from '../memory/sqlite.js';
 import { Workspace } from './workspace.js';
@@ -27,6 +28,9 @@ import { HeartbeatManager } from './heartbeat.js';
 import { SpawnManager, createSpawnTool } from './spawn.js';
 import { SkillLoader } from './skills.js';
 import { createBrowserTools } from '../tools/browser.js';
+import { Scheduler } from './scheduler.js';
+import { createSchedulerTools } from '../tools/scheduler.js';
+import { webSearchTool } from '../tools/web_search.js';
 
 import type {
   VoltClawAgentOptions,
@@ -105,6 +109,7 @@ export class VoltClawAgent {
   public readonly heartbeat: HeartbeatManager;
   public readonly spawner: SpawnManager;
   public readonly skills: SkillLoader;
+  public readonly scheduler: Scheduler;
   private readonly auditLog?: AuditLog;
   private readonly permissions: PermissionConfig;
   private readonly middleware: Middleware[] = [];
@@ -190,6 +195,7 @@ export class VoltClawAgent {
     this.heartbeat = new HeartbeatManager(this);
     this.spawner = new SpawnManager(this);
     this.skills = new SkillLoader();
+    this.scheduler = new Scheduler(this);
 
     this.permissions = options.permissions ?? { policy: 'allow_all' };
 
@@ -198,7 +204,9 @@ export class VoltClawAgent {
       createSelfTestTool(this.selfTest),
       ...createDocumentationTools(this.docs),
       ...createBrowserTools(), // Enable browser by default if installed
-      createSpawnTool(this.spawner)
+      createSpawnTool(this.spawner),
+      ...createSchedulerTools(this.scheduler),
+      webSearchTool
     ];
 
     if (options.tools) {
@@ -286,6 +294,12 @@ export class VoltClawAgent {
     if (!channel) {
       throw new ConfigurationError('Channel is required');
     }
+
+    if (Array.isArray(channel)) {
+      const channels = channel.map(c => this.resolveChannel(c));
+      return new CompositeChannel(channels);
+    }
+
     if (typeof channel === 'object' && 'subscribe' in channel && typeof channel.subscribe === 'function') {
       return channel as Channel;
     }
@@ -386,6 +400,7 @@ export class VoltClawAgent {
 
     // Start background managers
     this.heartbeat.start();
+    this.scheduler.start().catch(e => this.logger.error('Failed to start scheduler', { error: String(e) }));
     this.spawner.setAgent(this);
 
     await this.pluginManager.initAll(this);
@@ -423,6 +438,7 @@ export class VoltClawAgent {
 
     this.heartbeat.stop();
     this.skills.stopWatching();
+    await this.scheduler.stop();
     await this.spawner.waitForAll();
 
     await this.pluginManager.stopAll(this);

@@ -14,12 +14,21 @@ importers:
       inquirer:
         specifier: ^13.2.2
         version: 13.2.4(@types/node@25.2.3)
+      node-cron:
+        specifier: ^4.2.1
+        version: 4.2.1
       nostr-relaypool:
         specifier: ^0.6.30
         version: 0.6.30(typescript@5.9.3)(ws@8.19.0)
       nostr-tools:
         specifier: ^2.23.1
         version: 2.23.1(typescript@5.9.3)
+      playwright:
+        specifier: ^1.58.2
+        version: 1.58.2
+      playwright-core:
+        specifier: ^1.58.2
+        version: 1.58.2
       sqlite:
         specifier: ^5.1.1
         version: 5.1.1
@@ -39,18 +48,15 @@ importers:
       '@types/node':
         specifier: ^25.2.3
         version: 25.2.3
+      '@types/node-cron':
+        specifier: ^3.0.11
+        version: 3.0.11
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
       eslint:
         specifier: ^9.18.0
         version: 9.39.2
-      playwright:
-        specifier: ^1.58.2
-        version: 1.58.2
-      playwright-core:
-        specifier: ^1.58.2
-        version: 1.58.2
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -605,6 +611,9 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
+
+  '@types/node-cron@3.0.11':
+    resolution: {integrity: sha512-0ikrnug3/IyneSHqCBeslAhlK2aBfYek1fGo4bP4QnZPmiqSGRK+Oy7ZMisLWkesffJvQ1cqAcBnJC+8+nxIAg==}
 
   '@types/node@25.2.3':
     resolution: {integrity: sha512-m0jEgYlYz+mDJZ2+F4v8D1AyQb+QzsNqRuI7xg1VQX/KlKS0qT9r1Mo16yo5F/MtifXFgaofIFsdFMox2SxIbQ==}
@@ -1290,6 +1299,10 @@ packages:
 
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
+  node-cron@4.2.1:
+    resolution: {integrity: sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==}
+    engines: {node: '>=6.0.0'}
 
   node-gyp@8.4.1:
     resolution: {integrity: sha512-olTJRgUtAb/hOXG0E93wZDs5YiJlgbXxTwQAFHyNlRsXQnYzUaF2aGgujZbw+hR8aF4ZG/rST57bWMWD16jr9w==}
@@ -2154,6 +2167,8 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
+  '@types/node-cron@3.0.11': {}
+
   '@types/node@25.2.3':
     dependencies:
       undici-types: 7.16.0
@@ -2943,6 +2958,8 @@ snapshots:
       semver: 7.7.4
 
   node-addon-api@7.1.1: {}
+
+  node-cron@4.2.1: {}
 
   node-gyp@8.4.1:
     dependencies:
