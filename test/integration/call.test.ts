@@ -63,7 +63,7 @@ describe('Call Integration', () => {
                     };
                 }
 
-                if (system.includes('FOCUSED sub-agent')) {
+                if (system.includes('Depth: 1')) {
                     return { content: 'Hello from sub-agent!' };
                 }
 
@@ -122,7 +122,7 @@ describe('Call Integration', () => {
                 }
 
                 // Child (Turn 1): Decides to use code_exec
-                if (system.includes('FOCUSED sub-agent') && last.content === 'Begin.') {
+                if (system.includes('Depth: 1') && last.role === 'user' && last.content.includes('Task:')) {
                     childCalls++;
                     return {
                         content: "I will calculate it.",
@@ -135,13 +135,13 @@ describe('Call Integration', () => {
                 }
 
                 // Child (Turn 2): Receives result
-                if (system.includes('FOCUSED sub-agent') && last.role === 'tool') {
+                if (system.includes('Depth: 1') && last.role === 'tool') {
                     childCalls++;
                     return { content: "The answer is 2." };
                 }
 
                 // Parent: Receives final answer from subtask
-                if (!system.includes('FOCUSED sub-agent') && last.role === 'tool') {
+                if (system.includes('Depth: 0') && last.role === 'tool') {
                     if (last.content?.includes('The answer is 2.')) {
                         return { content: "Final result: 2" };
                     } else {

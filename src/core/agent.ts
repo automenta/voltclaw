@@ -453,16 +453,31 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    let messages: ChatMessage[] = [
+    const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory)
     ];
 
+    const reply = await this.runAgentLoop(session, messages, 'self', session.depth);
+
+    session.history.push({ role: 'assistant', content: reply });
+    this.pruneHistory(session);
+    await this.store.save?.();
+
+    return reply;
+  }
+
+  private async runAgentLoop(
+    session: Session,
+    messages: ChatMessage[],
+    from: string,
+    toolDepth: number
+  ): Promise<string> {
     messages = await this.contextManager.manageContext(messages);
 
     const cb = this.getCircuitBreaker('llm');
     let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-      tools: this.getToolDefinitions(session.depth)
+      tools: this.getToolDefinitions(toolDepth)
     })));
 
     while (response.toolCalls && response.toolCalls.length > 0) {
@@ -471,10 +486,43 @@ export class VoltClawAgent {
         content: response.content,
         toolCalls: response.toolCalls
       });
+      // Also push to session history if not already shared (assumes messages is separate)
+      // But query/handleTopLevel pass references. Let's assume messages IS the history + prompt.
+      // Wait, history is persisted. We need to be careful not to double push.
+      // Actually, query/handleTopLevel construct `messages` from `session.history` + new prompt.
+      // So pushing to `messages` is local to this loop.
+      // But we need to persist the assistant response and tool outputs to `session.history`.
+      // The current implementation does:
+      /*
+      messages.push(assistantResponse);
+      for calls: execute, messages.push(toolResult);
+      */
+      // And at the END: session.history.push(assistantResponse) (only final?).
+      // No, looking at `handleTopLevel`:
+      /*
+        while (response.toolCalls...) {
+            messages.push(assistant...);
+            for calls... execute... messages.push(tool...);
+            response = llm.chat(messages...);
+        }
+        const reply = response.content;
+        session.history.push({ role: 'user', content }); // pushed before loop
+        session.history.push({ role: 'assistant', content: reply }); // pushed after loop
+      */
+      // It seems intermediate tool calls are NOT persisted to session.history in `handleTopLevel`?
+      // Wait, let's check `handleTopLevel` implementation again.
+      // Yes, `handleTopLevel` only pushes the final reply to `session.history`.
+      // `handleSubtask` sets `session.history = messages;` at the end, so it persists EVERYTHING.
+
+      // This is an inconsistency. Subtasks persist full trace, top-level only persists final Q/A.
+      // RLM usually benefits from full traces.
+      // I will standardize on `session.history = messages` (minus system prompt) or similar.
+      // But `handleTopLevel` constructs `messages` as `[System, ...History, User]`.
+      // If we set `session.history = messages`, we duplicate System prompt and old history?
+      // We should probably append new interactions to history.
 
       for (const call of response.toolCalls) {
-        // Execute tool (including 'call' if enabled)
-        const result = await this.executeTool(call.name, call.arguments, session, 'self');
+        const result = await this.executeTool(call.name, call.arguments, session, from);
         messages.push({
           role: 'tool',
           toolCallId: call.id,
@@ -483,16 +531,11 @@ export class VoltClawAgent {
       }
 
       response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-        tools: this.getToolDefinitions(session.depth)
+        tools: this.getToolDefinitions(toolDepth)
       })));
     }
 
-    const reply = response.content || '[error]';
-    session.history.push({ role: 'assistant', content: reply });
-    this.pruneHistory(session);
-    await this.store.save?.();
-    
-    return reply;
+    return response.content || '[error]';
   }
 
   async *queryStream(message: string, _options?: QueryOptions): AsyncIterable<string> {
@@ -697,41 +740,14 @@ export class VoltClawAgent {
     session.topLevelStartedAt = Date.now();
 
     const systemPrompt = this.buildSystemPrompt(session.depth);
-    let messages: ChatMessage[] = [
+    const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...session.history.slice(-this.maxHistory),
       { role: 'user', content }
     ];
 
-    messages = await this.contextManager.manageContext(messages);
+    const reply = await this.runAgentLoop(session, messages, from, session.depth);
 
-    const cb = this.getCircuitBreaker('llm');
-    let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-      tools: this.getToolDefinitions(session.depth)
-    })));
-
-    while (response.toolCalls && response.toolCalls.length > 0) {
-      messages.push({
-        role: 'assistant',
-        content: response.content,
-        toolCalls: response.toolCalls
-      });
-
-      for (const call of response.toolCalls) {
-        const result = await this.executeTool(call.name, call.arguments, session, from);
-        messages.push({
-          role: 'tool',
-          toolCallId: call.id,
-          content: JSON.stringify(result)
-        });
-      }
-
-      response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-        tools: this.getToolDefinitions(session.depth)
-      })));
-    }
-
-    const reply = response.content || '[error]';
     session.history.push({ role: 'user', content });
     session.history.push({ role: 'assistant', content: reply });
     this.pruneHistory(session);
@@ -770,13 +786,6 @@ export class VoltClawAgent {
       ? '\nMUST produce final concise answer NOW. No further calls.'
       : '';
 
-    // Use template or fallback
-    const basePrompt = this.systemPromptTemplate || `You are VoltClaw (depth {depth}/{maxDepth}).`;
-
-    // We need to inject depth specific context into the subtask prompt
-    // Ideally we use buildSystemPrompt but customized for subtask
-    // For now, let's stick to a simpler subtask prompt to keep context low
-
     let contextInstruction = '';
     const memoryMatch = contextSummary.match(/RLM Context stored in memory\. Use memory_recall\(id='(.*?)'\)/);
     if (memoryMatch) {
@@ -789,8 +798,8 @@ export class VoltClawAgent {
         schemaInstruction = `\n\nOUTPUT REQUIREMENT:\nYou MUST produce a valid JSON object matching this schema:\n${schemaStr}\n\nDo not wrap the JSON in markdown code blocks. Just raw JSON.`;
     }
 
-    const systemPrompt = `FOCUSED sub-agent (depth ${depth}/${this.maxDepth}).
-Task: ${task}
+    const systemPrompt = this.buildSystemPrompt(depth);
+    const userPrompt = `Task: ${task}
 Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${mustFinish}`;
 
     // Initialize session state for subtask
@@ -803,38 +812,11 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'Begin.' }
+      { role: 'user', content: userPrompt }
     ];
 
     try {
-      const cb = this.getCircuitBreaker('llm');
-      let response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-        tools: this.getToolDefinitions(depth)
-      })));
-
-      // Tool Loop
-      while (response.toolCalls && response.toolCalls.length > 0) {
-        messages.push({
-          role: 'assistant',
-          content: response.content,
-          toolCalls: response.toolCalls
-        });
-
-        for (const call of response.toolCalls) {
-          const result = await this.executeTool(call.name, call.arguments, session, 'self');
-          messages.push({
-            role: 'tool',
-            toolCallId: call.id,
-            content: JSON.stringify(result)
-          });
-        }
-
-        response = await cb.execute(() => this.retrier.execute(() => this.llm.chat(messages, {
-          tools: this.getToolDefinitions(depth)
-        })));
-      }
-      
-      let result = response.content || '[no content]';
+      let result = await this.runAgentLoop(session, messages, 'self', depth);
 
       // Transparently offload large results to memory
       if (result.length > this.largeResultThreshold && this.memory) {
@@ -1208,6 +1190,23 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
     });
   }
 
+  private getRLMGuide(toolNames: string[]): string {
+    if (!toolNames.includes('code_exec')) {
+      return '';
+    }
+    return `
+RLM ENVIRONMENT:
+- You have a persistent JavaScript sandbox via 'code_exec'.
+- Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
+- Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
+- Use 'rlm_shared_set(key, value)', 'rlm_shared_get(key)', 'rlm_shared_increment(key, delta)', 'rlm_shared_push(key, value)' to access shared memory across the recursion tree.
+- Use 'rlm_map(items, mapper)', 'rlm_filter(items, predicate)', 'rlm_reduce(items, reducer, initial)' for functional operations over sub-agents.
+- Use 'rlm_trace()' to inspect the call stack.
+- Use 'load_context(id)' to retrieve specific memories by ID.
+- Console logs (console.log) are captured and returned to you for debugging.
+`;
+  }
+
   private buildSystemPrompt(depth: number): string {
     const toolNames = Array.from(this.tools.keys())
       .filter(name => {
@@ -1222,19 +1221,7 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
     const toolNamesStr = toolNames.join(', ');
 
     // Inject RLM Environment Guide if code_exec is available
-    let rlmGuide = '';
-    if (toolNames.includes('code_exec')) {
-        rlmGuide = `
-RLM ENVIRONMENT:
-- You have a persistent JavaScript sandbox via 'code_exec'.
-- Use 'rlm_call(task)' to recursively call yourself. Returns the result directly (large results are handled transparently).
-- Use 'rlm_call_parallel([{task: ...}, ...])' for concurrent sub-tasks.
-- Use 'rlm_shared_set(key, value)' and 'rlm_shared_get(key)' to access shared memory across the recursion tree.
-- Use 'rlm_trace()' to inspect the call stack.
-- Use 'load_context(id)' to retrieve specific memories by ID.
-- Console logs (console.log) are captured and returned to you for debugging.
-`;
-    }
+    const rlmGuide = this.getRLMGuide(toolNames);
 
     let template = this.systemPromptTemplate;
     if (!template) {
