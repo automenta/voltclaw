@@ -80,6 +80,9 @@ const defaultConfig: CLIConfig = {
     type: 'sqlite',
     path: path.join(VOLTCLAW_DIR, 'voltclaw.db')
   },
+  permissions: {
+    policy: 'allow_all'
+  },
   plugins: []
 };
 

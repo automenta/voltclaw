@@ -1347,15 +1347,18 @@ You are persistent, efficient, and recursive.`;
   private checkPermission(tool: Tool, role: Role): boolean {
     if (role === 'admin') return true;
 
-    if (tool.requiredRoles) {
+    // If tool specifies required roles, strictly enforce them
+    if (tool.requiredRoles && tool.requiredRoles.length > 0) {
       return tool.requiredRoles.includes(role);
     }
 
-    // Default policy if no roles specified
+    // If no specific roles required, fall back to global policy
+    // 'allow_all' (default) means anyone can use tools that don't have specific requirements
     if (this.permissions.policy === 'deny_all') {
       return false;
     }
-    return true; // Allow all by default
+
+    return true;
   }
 
   private getToolDefinitions(depth: number): Array<{ name: string; description: string; parameters?: import('./types.js').ToolParameters }> {
