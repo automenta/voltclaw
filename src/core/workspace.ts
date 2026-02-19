@@ -45,6 +45,12 @@ Use this file to store notes about tools, scripts, or specific commands that are
 The agent can read this file to understand better how to use available tools.
 `;
 
+export const DEFAULT_HEARTBEAT_MD = `# Periodic Tasks
+
+- [ ] Check for new messages
+- [ ] Review pending tasks
+`;
+
 export const DEFAULT_IDENTITY_MD = `# Identity
 
 Name: VoltClaw
@@ -61,11 +67,13 @@ export class Workspace {
 
   async ensureExists(): Promise<void> {
     await mkdir(this.workspaceDir, { recursive: true });
+    await mkdir(join(this.workspaceDir, 'skills'), { recursive: true });
 
     await this.ensureFile('SOUL.md', DEFAULT_SOUL);
     await this.ensureFile('USER.md', DEFAULT_USER);
     await this.ensureFile('AGENTS.md', DEFAULT_AGENTS_MD);
     await this.ensureFile('TOOLS.md', DEFAULT_TOOLS_MD);
+    await this.ensureFile('HEARTBEAT.md', DEFAULT_HEARTBEAT_MD);
     await this.ensureFile('IDENTITY.md', DEFAULT_IDENTITY_MD);
   }
 

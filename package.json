@@ -77,6 +77,8 @@
     "@types/node": "^25.2.3",
     "@types/ws": "^8.18.1",
     "eslint": "^9.18.0",
+    "playwright": "^1.58.2",
+    "playwright-core": "^1.58.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0",
     "vitest": "^3.0.0"
