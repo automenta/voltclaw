@@ -198,7 +198,46 @@ export async function configureCommand(): Promise<void> {
     }
   };
 
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
+  // 4. Permissions Configuration
+  const permissionAnswers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'admins',
+      message: 'Enter Admin Pubkeys (comma separated):',
+      default: (currentConfig.permissions?.admins || []).join(', ')
+    },
+    {
+      type: 'input',
+      name: 'users',
+      message: 'Enter Trusted User Pubkeys (comma separated):',
+      default: (currentConfig.permissions?.users || []).join(', ')
+    },
+    {
+      type: 'input',
+      name: 'agents',
+      message: 'Enter Trusted Agent Pubkeys (comma separated):',
+      default: (currentConfig.permissions?.agents || []).join(', ')
+    },
+    {
+      type: 'list',
+      name: 'policy',
+      message: 'Default Policy:',
+      choices: ['allow_all', 'deny_all'],
+      default: currentConfig.permissions?.policy || 'allow_all'
+    }
+  ] as any);
+
+  const finalConfig: CLIConfig = {
+    ...newConfig,
+    permissions: {
+      admins: permissionAnswers.admins.split(',').map((s: string) => s.trim()).filter((s: string) => s),
+      users: permissionAnswers.users.split(',').map((s: string) => s.trim()).filter((s: string) => s),
+      agents: permissionAnswers.agents.split(',').map((s: string) => s.trim()).filter((s: string) => s),
+      policy: permissionAnswers.policy as 'allow_all' | 'deny_all'
+    }
+  };
+
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(finalConfig, null, 2));
   if (keys.secretKey) {
       await fs.writeFile(KEYS_FILE, JSON.stringify({
           publicKey: keys.publicKey,
@@ -208,7 +247,7 @@ export async function configureCommand(): Promise<void> {
 
   console.log('Configuration saved.');
 
-  // 4. Workspace Configuration
+  // 5. Workspace Configuration
   const workspace = new Workspace();
   await workspace.ensureExists();
 
