@@ -194,19 +194,18 @@ Create `~/.voltclaw/config.json`:
 | Ollama | `ollama` | `OLLAMA_BASE_URL` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
-| Mock | `mock` | N/A |
 
-### Offline Usage
+### Local CLI Usage
 
-You can run VoltClaw completely offline using the `mock` LLM provider and `stdio` channel. This is useful for testing the agent logic or developing new tools without an internet connection or LLM setup.
+You can interact with VoltClaw directly via the terminal using the `stdio` channel, without needing to connect to Nostr relays. This is ideal for local tasks or testing with a local LLM like Ollama.
 
 Update your `~/.voltclaw/config.json`:
 
 ```json
 {
   "llm": {
-    "provider": "mock",
-    "model": "test"
+    "provider": "ollama",
+    "model": "llama3.2"
   },
   "channels": [
     { "type": "stdio" }

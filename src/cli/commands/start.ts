@@ -1,6 +1,5 @@
 import { VoltClawAgent, type LLMProvider, type MessageContext, type ReplyContext, type ErrorContext } from '../../core/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
-import { MockLLM } from '../../testing/index.js';
 import { FileStore } from '../../memory/index.js';
 import { SQLiteStore } from '../../memory/sqlite.js';
 import { createAllTools } from '../../tools/index.js';
@@ -32,13 +31,29 @@ function createLLMProvider(config: any): LLMProvider {
         model: config.model,
         apiKey: config.apiKey ?? process.env.ANTHROPIC_API_KEY ?? ''
       });
-    case 'mock':
-      return new MockLLM({
-        defaultResponse: 'This is a mock response from the offline provider. The agent logic is working, but no real LLM is connected.'
-      });
     default:
       throw new Error(`Unknown LLM provider: ${config.provider}`);
   }
+}
+
+async function checkLLMConnection(config: any): Promise<boolean> {
+  if (config.provider === 'ollama') {
+    const baseUrl = config.baseUrl || 'http://localhost:11434';
+    try {
+      // Simple ping to Ollama version endpoint
+      const res = await fetch(`${baseUrl}/api/version`);
+      if (!res.ok) throw new Error('Not OK');
+      return true;
+    } catch (e) {
+      console.error(`\n❌ Error: Could not connect to Ollama at ${baseUrl}`);
+      console.error('   Please ensure Ollama is running: `ollama serve`');
+      console.error('   Or update your config with `voltclaw configure`\n');
+      return false;
+    }
+  }
+  // For other providers, we assume they are online APIs.
+  // Validation usually happens on first request.
+  return true;
 }
 
 export async function startCommand(interactive: boolean = false): Promise<void> {
@@ -56,13 +71,18 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   console.log('Starting VoltClaw agent...');
   console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
 
+  if (!(await checkLLMConnection(config.llm))) {
+    process.exit(1);
+  }
+
   const llm = createLLMProvider(config.llm);
 
   // Use configured channels, injecting identity keys where needed
   const channels = (config.channels || [{ type: 'nostr' }]).map(c => {
     if (c.type === 'nostr' && !c.privateKey) {
-      return { ...c, privateKey: keys.secretKey, relays: c.relays || config.relays };
+      return { ...c, privateKey: keys.secretKey };
     }
+    // Stdio channel is handled by agent's resolveChannel
     return c;
   });
 

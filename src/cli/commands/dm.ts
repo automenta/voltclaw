@@ -4,8 +4,12 @@ import { loadConfig, loadOrGenerateKeys } from '../config.js';
 export async function dmCommand(to: string, message: string): Promise<void> {
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
+
+  const nostrConfig = config.channels?.find(c => c.type === 'nostr');
+  const relays = nostrConfig?.relays || ['wss://relay.damus.io'];
+
   const transport = new NostrClient({
-    relays: config.relays,
+    relays,
     privateKey: keys.secretKey
   });
 

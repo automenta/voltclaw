@@ -15,10 +15,9 @@ export interface ChannelConfig {
 }
 
 export interface CLIConfig {
-  relays: string[]; // Deprecated, use channels
   channels: ChannelConfig[];
   llm: {
-    provider: 'ollama' | 'openai' | 'anthropic' | 'mock';
+    provider: 'ollama' | 'openai' | 'anthropic';
     model: string;
     baseUrl?: string;
     apiKey?: string;
@@ -51,13 +50,15 @@ export interface CLIConfig {
 }
 
 const defaultConfig: CLIConfig = {
-  relays: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band'
-  ],
   channels: [
-    { type: 'nostr' } // Defaults use global relays for now, or we can move them here
+    {
+      type: 'nostr',
+      relays: [
+        'wss://relay.damus.io',
+        'wss://nos.lol',
+        'wss://relay.nostr.band'
+      ]
+    }
   ],
   llm: {
     provider: 'ollama',

@@ -51,21 +51,44 @@ export async function configureCommand(): Promise<void> {
   // 2. Channel Configuration
   const channels = [...(currentConfig.channels || [])];
 
-  // Ensure Nostr exists (default)
-  if (!channels.find(c => c.type === 'nostr')) {
-      channels.push({ type: 'nostr' });
-  }
-
-  // Configure Nostr Relays
-  const nostrAnswers = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'relays',
-      message: 'Enter Nostr Relays (comma separated):',
-      default: currentConfig.relays.join(', ')
-    }
+  // Configure Nostr
+  const nostrEnabled = await inquirer.prompt([
+      {
+          type: 'confirm',
+          name: 'enable',
+          message: 'Enable Nostr integration?',
+          default: !!channels.find(c => c.type === 'nostr')
+      }
   ] as any);
-  const nostrRelays = nostrAnswers.relays.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+
+  if (nostrEnabled.enable) {
+      const existingRelays = channels.find(c => c.type === 'nostr')?.relays || [
+        'wss://relay.damus.io',
+        'wss://nos.lol',
+        'wss://relay.nostr.band'
+      ];
+
+      const nostrAnswers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'relays',
+          message: 'Enter Nostr Relays (comma separated):',
+          default: existingRelays.join(', ')
+        }
+      ] as any);
+
+      const relays = nostrAnswers.relays.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+
+      const idx = channels.findIndex(c => c.type === 'nostr');
+      if (idx >= 0) {
+          channels[idx] = { ...channels[idx], type: 'nostr', relays };
+      } else {
+          channels.push({ type: 'nostr', relays });
+      }
+  } else {
+      const idx = channels.findIndex(c => c.type === 'nostr');
+      if (idx >= 0) channels.splice(idx, 1);
+  }
 
   // Configure Telegram
   const telegramAnswers = await inquirer.prompt([
@@ -188,7 +211,6 @@ export async function configureCommand(): Promise<void> {
   // Save Config & Keys
   const newConfig: CLIConfig = {
     ...currentConfig,
-    relays: nostrRelays,
     channels: channels,
     llm: {
       provider: llmAnswers.provider as any,
