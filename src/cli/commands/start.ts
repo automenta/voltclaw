@@ -1,5 +1,4 @@
 import { VoltClawAgent, type LLMProvider, type MessageContext, type ReplyContext, type ErrorContext } from '../../core/index.js';
-import { NostrClient } from '../../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../../llm/index.js';
 import { FileStore } from '../../memory/index.js';
 import { SQLiteStore } from '../../memory/sqlite.js';
@@ -37,6 +36,26 @@ function createLLMProvider(config: any): LLMProvider {
   }
 }
 
+async function checkLLMConnection(config: any): Promise<boolean> {
+  if (config.provider === 'ollama') {
+    const baseUrl = config.baseUrl || 'http://localhost:11434';
+    try {
+      // Simple ping to Ollama version endpoint
+      const res = await fetch(`${baseUrl}/api/version`);
+      if (!res.ok) throw new Error('Not OK');
+      return true;
+    } catch (e) {
+      console.error(`\n❌ Error: Could not connect to Ollama at ${baseUrl}`);
+      console.error('   Please ensure Ollama is running: `ollama serve`');
+      console.error('   Or update your config with `voltclaw configure`\n');
+      return false;
+    }
+  }
+  // For other providers, we assume they are online APIs.
+  // Validation usually happens on first request.
+  return true;
+}
+
 export async function startCommand(interactive: boolean = false): Promise<void> {
   // Check if config exists
   try {
@@ -52,10 +71,19 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   console.log('Starting VoltClaw agent...');
   console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
 
+  if (!(await checkLLMConnection(config.llm))) {
+    process.exit(1);
+  }
+
   const llm = createLLMProvider(config.llm);
-  const channel = new NostrClient({
-    relays: config.relays,
-    privateKey: keys.secretKey
+
+  // Use configured channels, injecting identity keys where needed
+  const channels = (config.channels || [{ type: 'nostr' }]).map(c => {
+    if (c.type === 'nostr' && !c.privateKey) {
+      return { ...c, privateKey: keys.secretKey };
+    }
+    // Stdio channel is handled by agent's resolveChannel
+    return c;
   });
 
   let store: import('../../core/types.js').Store;
@@ -74,7 +102,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
 
   const agent = new VoltClawAgent({
     llm,
-    channel,
+    channel: channels,
     persistence: store,
     call: config.call,
     plugins: config.plugins,

@@ -8,13 +8,13 @@ export const CONFIG_FILE = path.join(VOLTCLAW_DIR, 'config.json');
 export const KEYS_FILE = path.join(VOLTCLAW_DIR, 'keys.json');
 
 export interface ChannelConfig {
-  type: 'nostr' | 'telegram' | 'discord';
+  type: 'nostr' | 'telegram' | 'discord' | 'stdio';
   token?: string;
   relays?: string[];
+  privateKey?: string;
 }
 
 export interface CLIConfig {
-  relays: string[]; // Deprecated, use channels
   channels: ChannelConfig[];
   llm: {
     provider: 'ollama' | 'openai' | 'anthropic';
@@ -50,13 +50,15 @@ export interface CLIConfig {
 }
 
 const defaultConfig: CLIConfig = {
-  relays: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band'
-  ],
   channels: [
-    { type: 'nostr' } // Defaults use global relays for now, or we can move them here
+    {
+      type: 'nostr',
+      relays: [
+        'wss://relay.damus.io',
+        'wss://nos.lol',
+        'wss://relay.nostr.band'
+      ]
+    }
   ],
   llm: {
     provider: 'ollama',

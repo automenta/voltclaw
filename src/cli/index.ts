@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { VoltClawAgent, type LLMProvider } from '../core/index.js';
-import { NostrClient } from '../channels/nostr/index.js';
 import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.js';
 import { FileStore } from '../memory/index.js';
 import { createAllTools } from '../tools/index.js';
@@ -77,16 +76,22 @@ async function oneShotQuery(
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
   const llm = createLLMProvider(config.llm);
-  const channel = new NostrClient({
-    relays: config.relays,
-    privateKey: keys.secretKey
+
+  // Use configured channels, injecting identity keys where needed
+  const channels = (config.channels || [{ type: 'nostr' }]).map(c => {
+    if (c.type === 'nostr' && !c.privateKey) {
+      return { ...c, privateKey: keys.secretKey };
+    }
+    // Stdio channel is handled by agent's resolveChannel
+    return c;
   });
+
   const store = new FileStore({ path: path.join(VOLTCLAW_DIR, 'data.json') });
   const tools = await createAllTools();
 
   const agent = new VoltClawAgent({
     llm,
-    channel,
+    channel: channels,
     persistence: store,
     call: options.recursive ? config.call : { ...config.call, maxDepth: 1 },
     plugins: config.plugins,

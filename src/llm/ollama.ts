@@ -225,12 +225,17 @@ export class OllamaProvider extends BaseLLMProvider {
     };
     
     if (msg.toolCalls) {
-      formatted['tool_calls'] = msg.toolCalls;
+      formatted['tool_calls'] = msg.toolCalls.map(tc => ({
+        function: {
+          name: tc.name,
+          arguments: tc.arguments
+        }
+      }));
     }
     
-    if (msg.toolCallId) {
-      formatted['tool_call_id'] = msg.toolCallId;
-    }
+    // Ollama typically handles tool results as role: 'tool' content
+    // But some versions might look for tool_call_id linkage differently.
+    // For now, standard chat APIs usually just need role: tool.
     
     return formatted;
   }

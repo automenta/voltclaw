@@ -60,7 +60,20 @@ async function checkLLM(config: CLIConfig['llm']): Promise<HealthCheck> {
   }
 }
 
-async function checkChannel(relays: string[]): Promise<HealthCheck> {
+async function checkChannel(config: any): Promise<HealthCheck> {
+  // Check first Nostr channel found
+  const nostrConfig = config.channels?.find((c: any) => c.type === 'nostr');
+
+  if (!nostrConfig) {
+     return {
+         name: 'Channel',
+         healthy: true,
+         message: 'No Nostr channel configured (skipping)'
+     };
+  }
+
+  const relays = nostrConfig.relays || ['wss://relay.damus.io'];
+
   try {
     const keys = await loadOrGenerateKeys();
     const channel = new NostrClient({ relays, privateKey: keys.secretKey });
@@ -115,7 +128,7 @@ export async function healthCommand(json: boolean): Promise<void> {
   checks.push(llmCheck);
 
   // Channel check
-  const channelCheck = await checkChannel(config.relays);
+  const channelCheck = await checkChannel(config);
   checks.push(channelCheck);
 
   // Storage check

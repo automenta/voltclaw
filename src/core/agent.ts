@@ -5,6 +5,7 @@ import { OllamaProvider, OpenAIProvider, AnthropicProvider } from '../llm/index.
 import { NostrClient } from '../channels/nostr/index.js';
 import { TelegramChannel } from '../channels/telegram.js';
 import { DiscordChannel } from '../channels/discord.js';
+import { StdioChannel } from '../channels/stdio.js';
 import { CompositeChannel } from '../channels/composite.js';
 import { FileStore } from '../memory/index.js';
 import { SQLiteStore } from '../memory/sqlite.js';
@@ -320,6 +321,9 @@ export class VoltClawAgent {
       if (config.type === 'discord') {
         if (!config.token) throw new ConfigurationError('Discord token is required');
         return new DiscordChannel({ token: config.token });
+      }
+      if (config.type === 'stdio') {
+        return new StdioChannel();
       }
     }
     throw new ConfigurationError('Invalid channel configuration');

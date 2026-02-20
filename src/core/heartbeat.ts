@@ -18,14 +18,14 @@ export class HeartbeatManager {
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => this.executeHeartbeat(), this.intervalMs);
-    console.log(`Heartbeat started with interval ${this.intervalMs}ms`);
+    // console.debug(`Heartbeat started with interval ${this.intervalMs}ms`);
   }
 
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-      console.log('Heartbeat stopped');
+      // console.debug('Heartbeat stopped');
     }
   }
 
@@ -65,7 +65,7 @@ export class HeartbeatManager {
 
       if (tasks.length === 0) return;
 
-      console.log(`Running heartbeat tasks: ${tasks.join(', ')}`);
+      // console.debug(`Running heartbeat tasks: ${tasks.join(', ')}`);
 
       const prompt = `System Heartbeat Triggered.
 The following periodic tasks are defined in HEARTBEAT.md:
