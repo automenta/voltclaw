@@ -35,16 +35,16 @@ export const MessageList = ({
   streamingContent?: string;
 }) => {
   return (
-    <Box flexDirection="column" paddingBottom={1}>
+    <Box flexDirection="column" paddingBottom={0} width="100%">
       <Static items={messages}>
         {(msg) => (
-          <Box key={msg.id} flexDirection="column" marginBottom={0}>
-            <Box>
+          <Box key={msg.id} flexDirection="column" marginBottom={0} width="100%">
+            <Box width="100%">
                 <Text dimColor>{new Date(msg.timestamp).toLocaleTimeString()} </Text>
                 <Text bold color={msg.role === 'user' ? 'green' : msg.role === 'tool' ? 'yellow' : 'magenta'}>
                   {msg.role === 'user' ? '› ' : msg.role === 'tool' ? '' : '› '}
                 </Text>
-                {msg.role !== 'tool' && <Text>{msg.content}</Text>}
+                {msg.role !== 'tool' && <Text wrap="wrap">{msg.content}</Text>}
             </Box>
 
             {msg.role === 'tool' && (
@@ -54,9 +54,9 @@ export const MessageList = ({
         )}
       </Static>
       {streamingContent && (
-        <Box flexDirection="column" marginBottom={0}>
+        <Box flexDirection="row" marginBottom={0} width="100%">
           <Text bold color="magenta">› </Text>
-          <Text>{streamingContent}</Text>
+          <Text wrap="wrap">{streamingContent}</Text>
         </Box>
       )}
     </Box>

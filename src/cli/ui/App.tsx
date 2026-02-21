@@ -57,6 +57,23 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
       setStreamingContent('');
       streamingContentRef.current = '';
     }
+    if (key.escape) {
+        if (isThinking) {
+            setIsThinking(false);
+            // We can't easily cancel the agent promise from here without an abort controller signal
+            // passed down to queryStream, but we can at least stop the UI from blocking.
+            // Ideally agent.stop() or pause() could be used but that stops the daemon.
+            // For now, UI reset allows user to regain control.
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: '[Interrupted by User]',
+                timestamp: Date.now()
+            }]);
+            setStreamingContent('');
+            streamingContentRef.current = '';
+        }
+    }
   });
 
   const updateContext = async () => {

@@ -42,34 +42,34 @@ export const InputPrompt = ({
     }
   }, { isActive: !isThinking });
 
-  if (isThinking) {
-    return (
-        <Box>
-          <Text dimColor>› Processing...</Text>
-        </Box>
-    );
-  }
-
+  // If thinking, we still render the TextInput but keep it visually disabled or hidden
+  // unmounting causes focus loss issues when remounting
   return (
     <Box>
-      <Text color="green">› </Text>
-      <TextInput
-        value={value}
-        onChange={setValue}
-        onSubmit={(val) => {
-            const trimmed = val.trim();
-            if (trimmed) {
-                setHistory(prev => {
-                    // Avoid duplicates at the end
-                    if (prev.length > 0 && prev[prev.length - 1] === trimmed) return prev;
-                    return [...prev, trimmed];
-                });
-                setHistoryIndex(-1);
-                onSubmit(trimmed);
-                setValue('');
-            }
-        }}
-      />
+        {isThinking ? (
+            <Text dimColor>› Processing...</Text>
+        ) : (
+            <>
+                <Text color="green">› </Text>
+                <TextInput
+                    value={value}
+                    onChange={setValue}
+                    focus={!isThinking}
+                    onSubmit={(val) => {
+                        const trimmed = val.trim();
+                        if (trimmed) {
+                            setHistory(prev => {
+                                if (prev.length > 0 && prev[prev.length - 1] === trimmed) return prev;
+                                return [...prev, trimmed];
+                            });
+                            setHistoryIndex(-1);
+                            onSubmit(trimmed);
+                            setValue('');
+                        }
+                    }}
+                />
+            </>
+        )}
     </Box>
   );
 };
