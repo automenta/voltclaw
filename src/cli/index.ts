@@ -136,12 +136,15 @@ async function run(args: string[]): Promise<void> {
   let verbose = false;
   let debug = false;
   let interactive = false;
+  let demo = false;
   let json = false;
   const positional: string[] = [];
 
   for (const arg of args) {
     if (arg === '--recursive' || arg === '-r') {
       recursive = true;
+    } else if (arg === '--demo') {
+      demo = true;
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true;
     } else if (arg === '--debug' || arg === '-d') {
@@ -171,10 +174,10 @@ async function run(args: string[]): Promise<void> {
   // Handle known commands
   switch (command) {
     case 'start':
-      await startCommand(false);
+      await startCommand(false, demo);
       break;
     case 'repl':
-      await startCommand(true);
+      await startCommand(true, demo);
       break;
     case 'dm': {
       if (positional.length < 3) {

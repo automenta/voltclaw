@@ -52,7 +52,14 @@ async function checkLLMConnection(config: any): Promise<boolean> {
   return true;
 }
 
-export async function startCommand(interactive: boolean = false): Promise<void> {
+export async function startCommand(interactive: boolean = false, demo: boolean = false): Promise<void> {
+  if (demo) {
+      console.clear();
+      const { waitUntilExit } = render(React.createElement(App, { demoMode: true }));
+      await waitUntilExit();
+      return;
+  }
+
   try {
     await fs.stat(CONFIG_FILE);
   } catch {
@@ -144,7 +151,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   if (interactive) {
     // Render Ink App
     console.clear();
-    const { waitUntilExit } = render(React.createElement(App, { agent, approvalBridge }));
+    const { waitUntilExit } = render(React.createElement(App, { agent, approvalBridge, demoMode: false }));
     await waitUntilExit();
     await agent.stop();
     process.exit(0);
