@@ -14,21 +14,20 @@ export interface AgentContext {
   lastMemoryAccess?: string;
   callCount: number;
   maxCalls: number;
+  tokens?: number; // actualTokensUsed in Session
 }
 
 const RecursionChain = ({ context }: { context: AgentContext }) => {
-    // A visual representation of the agent's current position in the recursion tree
-    // e.g. [Root] > [Research] > [Summary]
-    // Since we don't have the full tree state here (only active subtasks), we can visualize active subs.
-
-    if (context.activeSubtasks.length === 0) return null;
+    if (context.activeSubtasks.length === 0) {
+        return <Text dimColor>Context: [Root]</Text>;
+    }
 
     return (
         <Box>
-            <Text dimColor>Context: </Text>
-            {context.activeSubtasks.map((st, i) => (
+            <Text dimColor>Context: [Root]</Text>
+            {context.activeSubtasks.map((st) => (
                 <Text key={st.id} color="yellow">
-                     {i > 0 ? ' > ' : ''}[{st.task.slice(0, 20)}{st.task.length > 20 ? '...' : ''}]
+                     {' > '}[{st.task.slice(0, 15)}{st.task.length > 15 ? '..' : ''}]
                 </Text>
             ))}
         </Box>
@@ -42,19 +41,28 @@ export const DenseStatus = ({
   context: AgentContext;
   isThinking: boolean;
 }) => {
-  const memText = context.lastMemoryAccess ? `Mem:${context.lastMemoryAccess.slice(0, 6)}` : '';
+  const memText = context.lastMemoryAccess ? `Mem:${context.lastMemoryAccess.slice(0, 6)}` : 'Mem:--';
+  const cost = context.estCostUSD.toFixed(3);
+  const calls = context.callCount;
 
+  // Dense layout: D:0 | C:0 | $:0.000 | M:-- [Thinking...]
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginY={0}>
-        <Box justifyContent="space-between">
-            <Box gap={2}>
-                <Text color="blue" bold>D:{context.depth}</Text>
-                {memText && <Text color="yellow">{memText}</Text>}
-                {context.estCostUSD > 0.01 && <Text dimColor>${context.estCostUSD.toFixed(3)}</Text>}
+    <Box flexDirection="column" borderStyle="none" paddingX={0} marginY={0}>
+        <Box width="100%">
+            <Text color="blue" bold> D:{context.depth} </Text>
+            <Text color="gray">|</Text>
+            <Text color="magenta"> C:{calls} </Text>
+            <Text color="gray">|</Text>
+            <Text color={Number(cost) > 0.5 ? 'red' : 'green'}> $:{cost} </Text>
+            <Text color="gray">|</Text>
+            <Text color="yellow"> {memText} </Text>
+
+            <Box flexGrow={1} marginLeft={2}>
+                 {isThinking && <Text color="green" backgroundColor="black" bold> ⚡ THINKING... </Text>}
             </Box>
-            {isThinking && <Text color="green" dimColor>Thinking...</Text>}
         </Box>
         <RecursionChain context={context} />
+        <Text dimColor>────────────────────────────────────────────────────────────────────────────────</Text>
     </Box>
   );
 };

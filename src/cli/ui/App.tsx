@@ -244,8 +244,8 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
   };
 
   return (
-    <Box flexDirection="column" padding={0} width="100%">
-        <Box flexDirection="column" flexGrow={1} paddingX={1} marginBottom={1}>
+    <Box flexDirection="column" width="100%">
+        <Box flexDirection="column" flexGrow={1} marginBottom={0}>
             <MessageList messages={messages} streamingContent={streamingContent} />
         </Box>
 
@@ -260,11 +260,9 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
                 }}
             />
         ) : (
-            <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+            <Box flexDirection="column" borderStyle="none" marginX={0} paddingX={0}>
                 <DenseStatus context={context} isThinking={isThinking} />
-                <Box marginTop={0}>
-                    <InputPrompt onSubmit={handleSubmit} isThinking={isThinking} />
-                </Box>
+                <InputPrompt onSubmit={handleSubmit} isThinking={isThinking} />
             </Box>
         )}
     </Box>
