@@ -4,15 +4,14 @@ import { FileStore } from '../../memory/index.js';
 import { SQLiteStore } from '../../memory/sqlite.js';
 import { createAllTools } from '../../tools/index.js';
 import { loadConfig, loadOrGenerateKeys, VOLTCLAW_DIR, CONFIG_FILE } from '../config.js';
-import { askApproval } from '../interactive.js';
 import path from 'path';
-import readline from 'readline';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import React from 'react';
+import { render } from 'ink';
+import { App } from '../ui/index.js';
 
 // --- Helpers ---
-// Ideally these would be shared but for now we duplicate or refactor CLI logic later.
-// I will create a config.ts first to share these.
 
 function createLLMProvider(config: any): LLMProvider {
   switch (config.provider) {
@@ -40,7 +39,6 @@ async function checkLLMConnection(config: any): Promise<boolean> {
   if (config.provider === 'ollama') {
     const baseUrl = config.baseUrl || 'http://localhost:11434';
     try {
-      // Simple ping to Ollama version endpoint
       const res = await fetch(`${baseUrl}/api/version`);
       if (!res.ok) throw new Error('Not OK');
       return true;
@@ -51,13 +49,17 @@ async function checkLLMConnection(config: any): Promise<boolean> {
       return false;
     }
   }
-  // For other providers, we assume they are online APIs.
-  // Validation usually happens on first request.
   return true;
 }
 
-export async function startCommand(interactive: boolean = false): Promise<void> {
-  // Check if config exists
+export async function startCommand(interactive: boolean = false, demo: boolean = false): Promise<void> {
+  if (demo) {
+      console.clear();
+      const { waitUntilExit } = render(React.createElement(App, { demoMode: true }));
+      await waitUntilExit();
+      return;
+  }
+
   try {
     await fs.stat(CONFIG_FILE);
   } catch {
@@ -68,8 +70,10 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   const config = await loadConfig();
   const keys = await loadOrGenerateKeys();
 
-  console.log('Starting VoltClaw agent...');
-  console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
+  if (!interactive) {
+      console.log('Starting VoltClaw agent...');
+      console.log(`Public key: ${keys.publicKey.slice(0, 16)}...`);
+  }
 
   if (!(await checkLLMConnection(config.llm))) {
     process.exit(1);
@@ -77,18 +81,15 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
 
   const llm = createLLMProvider(config.llm);
 
-  // Use configured channels, injecting identity keys where needed
   const channels = (config.channels || [{ type: 'nostr' }]).map(c => {
     if (c.type === 'nostr' && !c.privateKey) {
       return { ...c, privateKey: keys.secretKey };
     }
-    // Stdio channel is handled by agent's resolveChannel
     return c;
   });
 
-  // Ensure at least one channel exists (Stdio fallback if none configured)
   if (channels.length === 0) {
-      console.log('No external channels configured. Using Stdio (console) channel.');
+      if (!interactive) console.log('No external channels configured. Using Stdio (console) channel.');
       channels.push({ type: 'stdio' });
   }
 
@@ -97,14 +98,19 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
   if (config.persistence?.type === 'sqlite') {
     store = new SQLiteStore({ path: config.persistence.path });
   } else {
-    // Default or 'file'
     const storePath = config.persistence?.path ?? path.join(VOLTCLAW_DIR, 'data.json');
     store = new FileStore({ path: storePath });
   }
 
   const tools = await createAllTools();
 
-  let rl: readline.Interface | undefined;
+  // Approval Bridge for Ink UI interaction
+  const approvalBridge = {
+      requestApproval: async (tool: string, args: any): Promise<boolean> => {
+          // This will be overridden by App component in interactive mode
+          return true;
+      }
+  };
 
   const agent = new VoltClawAgent({
     llm,
@@ -127,74 +133,30 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
         }
       },
       onError: async (ctx: ErrorContext) => {
-        console.error(`[${new Date().toISOString()}] Error:`, ctx.error.message);
+        if (!interactive) {
+            console.error(`[${new Date().toISOString()}] Error:`, ctx.error.message);
+        }
       },
       onToolApproval: interactive ? async (tool, args) => {
-        if (rl) rl.pause();
-        try {
-          return await askApproval(tool, args);
-        } finally {
-          if (rl) rl.resume();
-        }
+        return approvalBridge.requestApproval(tool, args);
       } : undefined
     }
   });
 
-  // Set source dir for self-improvement
-  // We need to resolve import.meta.url carefully if this file moves
-  // Assuming src/cli/commands/start.ts -> up two levels -> src/cli -> up one -> src -> up one -> root
-  // Wait, current file is src/cli/commands/start.ts
-  // root is ../../..
-
-  // Actually, let's keep it simple. If running from dist/cli/commands/start.js
-  // dist/cli/commands/start.js -> .. -> dist/cli -> .. -> dist -> .. -> root
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   process.env.VOLTCLAW_SOURCE_DIR = path.resolve(currentDir, '../../..');
 
   await agent.start();
 
   if (interactive) {
-    console.log('Interactive REPL mode. Type your query below.');
-    console.log('Type "exit" to quit.');
-
-    const repl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: '> '
-    });
-
-    rl = repl;
-
-    repl.prompt();
-
-    repl.on('line', async (line) => {
-      const query = line.trim();
-      if (query === 'exit') {
-        repl.close();
-        return;
-      }
-      if (query) {
-        try {
-          for await (const chunk of agent.queryStream(query)) {
-            process.stdout.write(chunk);
-          }
-          process.stdout.write('\n');
-        } catch (error) {
-          console.error('Error:', error);
-        }
-      }
-      repl.prompt();
-    });
-
-    repl.on('close', async () => {
-      console.log('\nShutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-
+    // Render Ink App
+    console.clear();
+    const { waitUntilExit } = render(React.createElement(App, { agent, store, approvalBridge, demoMode: false }));
+    await waitUntilExit();
+    await agent.stop();
+    process.exit(0);
   } else {
     console.log('VoltClaw agent is running. Press Ctrl+C to stop.');
-    // Keep process alive
     return new Promise(() => {
       process.on('SIGINT', async () => {
           console.log('\nShutting down...');

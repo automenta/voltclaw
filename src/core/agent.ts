@@ -46,6 +46,7 @@ import type {
   MessageContext,
   ReplyContext,
   CallContext,
+  ToolContext,
   ErrorContext,
   LogContext,
   QueryOptions,
@@ -72,9 +73,9 @@ import {
   isRetryable
 } from './errors.js';
 
-const DEFAULT_MAX_DEPTH = 4;
-const DEFAULT_MAX_CALLS = 25;
-const DEFAULT_BUDGET_USD = 0.75;
+const DEFAULT_MAX_DEPTH = 8;
+const DEFAULT_MAX_CALLS = Infinity;
+const DEFAULT_BUDGET_USD = Infinity;
 const DEFAULT_TIMEOUT_MS = 600000;
 const DEFAULT_MAX_HISTORY = 60;
 const DEFAULT_PRUNE_INTERVAL = 300000;
@@ -120,6 +121,8 @@ export class VoltClawAgent {
     onMessage?: (ctx: MessageContext) => Promise<void>;
     onReply?: (ctx: ReplyContext) => Promise<void>;
     onCall?: (ctx: CallContext) => Promise<void>;
+    onToolStart?: (ctx: ToolContext) => Promise<void>;
+    onToolEnd?: (ctx: ToolContext) => Promise<void>;
     onError?: (ctx: ErrorContext) => Promise<void>;
     onLog?: (ctx: LogContext) => Promise<void>;
     onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
@@ -1036,6 +1039,15 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
           }
       }
 
+      const toolCtx: ToolContext = {
+        tool: name,
+        args,
+        timestamp: new Date(),
+        depth: session.depth
+      };
+      await this.hooks.onToolStart?.(toolCtx);
+      this.emit('tool_start', toolCtx);
+
       await this.auditLog?.log(from, 'tool_execute', { tool: name, args });
 
       const cb = this.getCircuitBreaker(name);
@@ -1054,9 +1066,27 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
 
       await this.auditLog?.log(from, 'tool_result', { tool: name, result });
 
+      const endCtx: ToolContext = {
+        ...toolCtx,
+        timestamp: new Date(),
+        result
+      };
+      await this.hooks.onToolEnd?.(endCtx);
+      this.emit('tool_end', endCtx);
+
       return result as ToolCallResult;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+
+      const endCtx: ToolContext = {
+        tool: name,
+        args,
+        timestamp: new Date(),
+        depth: session.depth,
+        error: err
+      };
+      await this.hooks.onToolEnd?.(endCtx);
+      this.emit('tool_end', endCtx);
 
       // If we reach here, it means retries failed, circuit breaker failed (or open), and fallback failed (or missing).
       // Push to Error Queue.

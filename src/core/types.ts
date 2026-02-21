@@ -107,6 +107,8 @@ export interface HooksConfig {
   onError?: (ctx: ErrorContext) => Promise<void>;
   onLog?: (ctx: LogContext) => Promise<void>;
   onToolApproval?: (tool: string, args: Record<string, unknown>) => Promise<boolean>;
+  onToolStart?: (ctx: ToolContext) => Promise<void>;
+  onToolEnd?: (ctx: ToolContext) => Promise<void>;
   onStart?: () => Promise<void>;
   onStop?: () => Promise<void>;
 }
@@ -135,6 +137,15 @@ export interface CallContext {
   task: string;
   depth: number;
   parentPubkey?: string;
+}
+
+export interface ToolContext {
+  tool: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  error?: Error;
+  timestamp: Date;
+  depth?: number;
 }
 
 export interface ErrorContext {
@@ -182,6 +193,8 @@ export type EventMap = {
   message: [MessageContext];
   reply: [ReplyContext];
   call: [CallContext];
+  tool_start: [ToolContext];
+  tool_end: [ToolContext];
   error: [ErrorContext];
   log: [LogContext];
   start: [];
