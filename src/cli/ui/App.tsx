@@ -260,7 +260,7 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
                 }}
             />
         ) : (
-            <Box flexDirection="column" borderStyle="none" marginX={0} paddingX={0}>
+            <Box flexDirection="column" marginX={0} paddingX={0}>
                 <DenseStatus context={context} isThinking={isThinking} />
                 <InputPrompt onSubmit={handleSubmit} isThinking={isThinking} />
             </Box>

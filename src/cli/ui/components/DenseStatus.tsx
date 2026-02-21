@@ -47,7 +47,7 @@ export const DenseStatus = ({
 
   // Dense layout: D:0 | C:0 | $:0.000 | M:-- [Thinking...]
   return (
-    <Box flexDirection="column" borderStyle="none" paddingX={0} marginY={0}>
+    <Box flexDirection="column" paddingX={0} marginY={0}>
         <Box width="100%">
             <Text color="blue" bold> D:{context.depth} </Text>
             <Text color="gray">|</Text>
