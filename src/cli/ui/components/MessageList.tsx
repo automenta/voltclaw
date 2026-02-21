@@ -38,11 +38,11 @@ export const MessageList = ({
     <Box flexDirection="column" paddingBottom={1}>
       <Static items={messages}>
         {(msg) => (
-          <Box key={msg.id} flexDirection="column" marginBottom={1}>
+          <Box key={msg.id} flexDirection="column" marginBottom={0}>
             <Box>
                 <Text dimColor>{new Date(msg.timestamp).toLocaleTimeString()} </Text>
                 <Text bold color={msg.role === 'user' ? 'green' : msg.role === 'tool' ? 'yellow' : 'magenta'}>
-                  {msg.role === 'user' ? '👤 YOU > ' : msg.role === 'tool' ? '' : '⚡ VOLTCLAW > '}
+                  {msg.role === 'user' ? '› ' : msg.role === 'tool' ? '' : '› '}
                 </Text>
                 {msg.role !== 'tool' && <Text>{msg.content}</Text>}
             </Box>
@@ -54,8 +54,8 @@ export const MessageList = ({
         )}
       </Static>
       {streamingContent && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="magenta">⚡ VOLTCLAW ⚡</Text>
+        <Box flexDirection="column" marginBottom={0}>
+          <Text bold color="magenta">› </Text>
           <Text>{streamingContent}</Text>
         </Box>
       )}

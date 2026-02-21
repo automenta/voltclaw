@@ -3,8 +3,7 @@ import { Box, useApp, useInput, Text } from 'ink';
 import { VoltClawAgent, type Store } from '../../core/agent.js';
 import { MessageList, ChatMessage } from './components/MessageList.js';
 import { InputPrompt } from './components/InputPrompt.js';
-import { StatusLine } from './components/StatusLine.js';
-import { ContextVisualizer, AgentContext } from './components/ContextVisualizer.js';
+import { DenseStatus, AgentContext } from './components/DenseStatus.js';
 
 export interface ApprovalBridge {
     requestApproval: (tool: string, args: any) => Promise<boolean>;
@@ -36,19 +35,19 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
   const [isThinking, setIsThinking] = useState(false);
   const [currentTool, setCurrentTool] = useState<string | undefined>();
   const [approvalRequest, setApprovalRequest] = useState<{ tool: string, args: any, resolve: (b: boolean) => void } | null>(null);
-  const [showContext, setShowContext] = useState(true);
 
   const [context, setContext] = useState<AgentContext>({
     depth: 0,
-    maxDepth: 4,
-    budgetUSD: 0.75,
+    maxDepth: 8,
+    budgetUSD: Infinity,
     estCostUSD: 0,
     activeSubtasks: [],
     callCount: 0,
-    maxCalls: 25
+    maxCalls: Infinity
   });
 
   useInput((input, key) => {
+    // Only capture Ctrl shortcuts, pass other input to InputPrompt via its own focus
     if (key.ctrl && input === 'c') {
       exit();
       process.exit(0);
@@ -57,9 +56,6 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
       setMessages([]);
       setStreamingContent('');
       streamingContentRef.current = '';
-    }
-    if (key.ctrl && input === 'v') {
-        setShowContext(prev => !prev);
     }
   });
 
@@ -248,14 +244,8 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
   };
 
   return (
-    <Box flexDirection="column" padding={1} width="100%">
-        <Box justifyContent="center" marginBottom={1} borderStyle="double" borderColor="cyan" paddingX={2}>
-            <Text bold color="cyan">⚡ VOLTCLAW ⚡</Text>
-        </Box>
-
-        {showContext && <ContextVisualizer context={context} />}
-
-        <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" padding={0} width="100%">
+        <Box flexDirection="column" flexGrow={1} paddingX={1} marginBottom={1}>
             <MessageList messages={messages} streamingContent={streamingContent} />
         </Box>
 
@@ -270,13 +260,12 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
                 }}
             />
         ) : (
-            <>
-                <StatusLine isThinking={isThinking} currentTool={currentTool} />
-                <InputPrompt onSubmit={handleSubmit} isThinking={isThinking} />
-                <Box marginTop={1}>
-                    <Text dimColor>Ctrl+C: Exit | Ctrl+L: Clear | Ctrl+V: Toggle Context</Text>
+            <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+                <DenseStatus context={context} isThinking={isThinking} />
+                <Box marginTop={0}>
+                    <InputPrompt onSubmit={handleSubmit} isThinking={isThinking} />
                 </Box>
-            </>
+            </Box>
         )}
     </Box>
   );

@@ -22,6 +22,10 @@ export const InputPrompt = ({
               const newIndex = historyIndex + 1;
               setHistoryIndex(newIndex);
               setValue(history[history.length - 1 - newIndex]);
+          } else if (historyIndex === -1 && history.length > 0) {
+              // Start from latest
+              setHistoryIndex(0);
+              setValue(history[history.length - 1]);
           }
       }
     }
@@ -36,19 +40,19 @@ export const InputPrompt = ({
         setValue('');
       }
     }
-  });
+  }, { isActive: !isThinking });
 
   if (isThinking) {
     return (
         <Box>
-          <Text dimColor>❯ Processing...</Text>
+          <Text dimColor>› Processing...</Text>
         </Box>
     );
   }
 
   return (
     <Box>
-      <Text color="green">❯ </Text>
+      <Text color="green">› </Text>
       <TextInput
         value={value}
         onChange={setValue}

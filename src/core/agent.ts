@@ -73,9 +73,9 @@ import {
   isRetryable
 } from './errors.js';
 
-const DEFAULT_MAX_DEPTH = 4;
-const DEFAULT_MAX_CALLS = 25;
-const DEFAULT_BUDGET_USD = 0.75;
+const DEFAULT_MAX_DEPTH = 8;
+const DEFAULT_MAX_CALLS = Infinity;
+const DEFAULT_BUDGET_USD = Infinity;
 const DEFAULT_TIMEOUT_MS = 600000;
 const DEFAULT_MAX_HISTORY = 60;
 const DEFAULT_PRUNE_INTERVAL = 300000;
