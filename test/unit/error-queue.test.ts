@@ -1,15 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { VoltClawAgent } from '../../src/core/agent.js';
-import { DeadLetterQueue } from '../../src/core/dlq.js';
+import { ErrorQueue } from '../../src/core/error-queue.js';
 import type { Tool } from '../../src/core/types.js';
 
-describe('DeadLetterQueue', () => {
+describe('ErrorQueue', () => {
   it('should push and list failed operations', async () => {
-    const dlq = new DeadLetterQueue();
+    const queue = new ErrorQueue();
     const error = new Error('test error');
-    const id = await dlq.push('test-tool', { arg: 1 }, error);
+    const id = await queue.push('test-tool', { arg: 1 }, error);
 
-    const list = await dlq.list();
+    const list = await queue.list();
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({
       id,
@@ -20,16 +20,16 @@ describe('DeadLetterQueue', () => {
   });
 
   it('should remove operations', async () => {
-    const dlq = new DeadLetterQueue();
-    const id = await dlq.push('test', {}, new Error('e'));
+    const queue = new ErrorQueue();
+    const id = await queue.push('test', {}, new Error('e'));
 
-    await dlq.remove(id);
-    const list = await dlq.list();
+    await queue.remove(id);
+    const list = await queue.list();
     expect(list).toHaveLength(0);
   });
 });
 
-describe('VoltClawAgent DLQ Integration', () => {
+describe('VoltClawAgent ErrorQueue Integration', () => {
   // Mock dependencies
   const mockLLM = {
     name: 'mock',
@@ -62,7 +62,7 @@ describe('VoltClawAgent DLQ Integration', () => {
     maxDepth: 10
   };
 
-  it('should push to DLQ when tool execution fails completely', async () => {
+  it('should push to ErrorQueue when tool execution fails completely', async () => {
     const agent = new VoltClawAgent({
       llm: mockLLM,
       channel: mockChannel,
@@ -79,10 +79,10 @@ describe('VoltClawAgent DLQ Integration', () => {
     const result = await executeTool('fail');
     expect(result).toHaveProperty('error', 'always fails');
 
-    // Check DLQ
-    const dlqList = await agent.dlq.list();
-    expect(dlqList).toHaveLength(1);
-    expect(dlqList[0].tool).toBe('fail');
-    expect(dlqList[0].error).toBe('always fails');
+    // Check ErrorQueue
+    const list = await agent.errors.list();
+    expect(list).toHaveLength(1);
+    expect(list[0].tool).toBe('fail');
+    expect(list[0].error).toBe('always fails');
   });
 });

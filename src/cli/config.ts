@@ -28,7 +28,7 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
-  dlq?: {
+  errors?: {
     type: 'file' | 'memory';
     path?: string;
     enableTools?: boolean;
@@ -70,9 +70,9 @@ const defaultConfig: CLIConfig = {
     budgetUSD: 0.75,
     timeoutMs: 600000
   },
-  dlq: {
+  errors: {
     type: 'file',
-    path: path.join(VOLTCLAW_DIR, 'dlq.json'),
+    path: path.join(VOLTCLAW_DIR, 'errors.json'),
     enableTools: false
   },
   audit: {
@@ -89,26 +89,30 @@ const defaultConfig: CLIConfig = {
 };
 
 export async function loadConfig(): Promise<CLIConfig> {
-  let userConfig: Partial<CLIConfig> = {};
+  let userConfig: any = {};
 
   try {
     const content = await fs.readFile(CONFIG_FILE, 'utf-8');
-    userConfig = JSON.parse(content) as Partial<CLIConfig>;
+    userConfig = JSON.parse(content);
   } catch {
     // No file, proceed with defaults
   }
 
-  // Merge deeply? Or shallow.
-  // Careful with arrays.
+  // Backward compatibility for DLQ -> Errors
+  if (userConfig.dlq && !userConfig.errors) {
+      userConfig.errors = userConfig.dlq;
+      // If path was default dlq.json, we might want to migrate it?
+      // But let's just use what they had.
+  }
 
   // Start with default or user channels
   const channels = userConfig.channels || [...defaultConfig.channels];
 
   // Check ENV for tokens if not in config
-  if (process.env.TELEGRAM_TOKEN && !channels.some(c => c.type === 'telegram')) {
+  if (process.env.TELEGRAM_TOKEN && !channels.some((c: any) => c.type === 'telegram')) {
       channels.push({ type: 'telegram', token: process.env.TELEGRAM_TOKEN });
   }
-  if (process.env.DISCORD_TOKEN && !channels.some(c => c.type === 'discord')) {
+  if (process.env.DISCORD_TOKEN && !channels.some((c: any) => c.type === 'discord')) {
       channels.push({ type: 'discord', token: process.env.DISCORD_TOKEN });
   }
 

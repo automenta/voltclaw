@@ -9,7 +9,7 @@ import { startCommand } from './commands/start.js';
 import { dmCommand } from './commands/dm.js';
 import { healthCommand } from './commands/health.js';
 import { sessionCommand } from './commands/session.js';
-import { dlqCommand } from './commands/dlq.js';
+import { errorsCommand } from './commands/errors.js';
 import { configureCommand } from './commands/configure.js';
 import { onboardCommand } from './commands/onboard.js';
 import { schedulerCommand } from './commands/scheduler.js';
@@ -56,7 +56,7 @@ Commands:
   dm <npub> <msg>     Send a direct message
   health              Run system health checks
   session [cmd]       Manage sessions (list, show, clear, prune)
-  dlq [cmd]           Manage Dead Letter Queue (list, show, delete, clear)
+  errors [cmd]        Manage Error Queue (list, show, delete, clear)
   scheduler [cmd]     Manage Scheduled Tasks (list, cancel)
   version             Show version info
   help                Show this help message
@@ -192,8 +192,8 @@ async function run(args: string[]): Promise<void> {
       await sessionCommand(positional[1] || 'list', positional[2]);
       break;
     }
-    case 'dlq': {
-      await dlqCommand(positional[1] || 'list', positional[2]);
+    case 'errors': {
+      await errorsCommand(positional[1] || 'list', positional[2]);
       break;
     }
     case 'scheduler': {
