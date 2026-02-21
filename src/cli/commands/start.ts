@@ -111,6 +111,7 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     channel: channels,
     persistence: store,
     call: config.call,
+    history: config.history,
     plugins: config.plugins,
     tools,
     errors: config.errors,

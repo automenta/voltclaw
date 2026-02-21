@@ -28,6 +28,10 @@ export interface CLIConfig {
     budgetUSD: number;
     timeoutMs: number;
   };
+  history?: {
+    maxMessages?: number;
+    contextWindowSize?: number;
+  };
   errors?: {
     type: 'file' | 'memory';
     path?: string;
@@ -69,6 +73,10 @@ const defaultConfig: CLIConfig = {
     maxCalls: 25,
     budgetUSD: 0.75,
     timeoutMs: 600000
+  },
+  history: {
+    maxMessages: 60,
+    contextWindowSize: 60
   },
   errors: {
     type: 'file',

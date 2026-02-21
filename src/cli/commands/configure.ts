@@ -12,6 +12,35 @@ export async function configureCommand(): Promise<void> {
 
   const currentConfig = await loadConfig();
 
+  // 0. Setup Profile
+  const profileAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'profile',
+      message: 'Select Setup Profile:',
+      choices: [
+        { name: 'Standard (Cloud LLMs / Powerful Local)', value: 'standard' },
+        { name: 'Compact (Low Resource / Small Local Models)', value: 'compact' },
+        { name: 'Custom', value: 'custom' }
+      ],
+      default: 'standard'
+    }
+  ] as any);
+
+  // Apply profile defaults
+  let profileConfig: Partial<CLIConfig> = {};
+  if (profileAnswers.profile === 'compact') {
+      profileConfig = {
+          call: { ...currentConfig.call, maxDepth: 2, maxCalls: 10 },
+          history: { maxMessages: 20, contextWindowSize: 20 }
+      };
+      // Default to Ollama if compact
+      if (!currentConfig.llm.provider) {
+          currentConfig.llm.provider = 'ollama';
+          currentConfig.llm.model = 'llama3.2';
+      }
+  }
+
   // 1. LLM Configuration
   const llmAnswers = await inquirer.prompt([
     {
@@ -213,6 +242,7 @@ export async function configureCommand(): Promise<void> {
   // Save Config & Keys
   const newConfig: CLIConfig = {
     ...currentConfig,
+    ...profileConfig,
     channels: channels,
     llm: {
       provider: llmAnswers.provider as any,
