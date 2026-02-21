@@ -13,8 +13,8 @@ import { Workspace } from './workspace.js';
 import { PluginManager } from './plugin.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { Retrier } from './retry.js';
-import { DeadLetterQueue, InMemoryDLQ, FileDLQ } from './dlq.js';
-import { createDLQTools } from '../tools/dlq.js';
+import { ErrorQueue, InMemoryErrorQueue, FileErrorQueue } from './error-queue.js';
+import { createErrorQueueTools } from '../tools/error_queue.js';
 import { FileAuditLog, type AuditLog } from './audit.js';
 import { MemoryManager, GraphManager } from '../memory/index.js';
 import { createMemoryTools } from '../tools/memory.js';
@@ -102,7 +102,7 @@ export class VoltClawAgent {
   private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly retrier: Retrier;
   private readonly fallbacks: Record<string, string>;
-  public readonly dlq: DeadLetterQueue;
+  public readonly errors: ErrorQueue;
   public readonly memory: MemoryManager;
   public readonly graph: GraphManager;
   public readonly contextManager: ContextManager;
@@ -172,11 +172,11 @@ export class VoltClawAgent {
 
     this.fallbacks = options.fallbacks ?? {};
 
-    // DLQ initialization
-    if (options.dlq?.type === 'file' && options.dlq.path) {
-      this.dlq = new DeadLetterQueue(new FileDLQ(options.dlq.path));
+    // Error Queue initialization
+    if (options.errors?.type === 'file' && options.errors.path) {
+      this.errors = new ErrorQueue(new FileErrorQueue(options.errors.path));
     } else {
-      this.dlq = new DeadLetterQueue(new InMemoryDLQ());
+      this.errors = new ErrorQueue(new InMemoryErrorQueue());
     }
 
     // Audit Log initialization
@@ -233,9 +233,9 @@ export class VoltClawAgent {
       this.registerTools(createPromptTools(this.prompts));
     }
 
-    // Register DLQ tools
-    if (options.dlq?.enableTools) {
-      this.registerTools(createDLQTools(this));
+    // Register Error Queue tools
+    if (options.errors?.enableTools) {
+      this.registerTools(createErrorQueueTools(this));
     }
 
     // Register memory tools if store supports it
@@ -1059,8 +1059,8 @@ Parent context: ${contextSummary}${contextInstruction}${schemaInstruction}${must
       const err = error instanceof Error ? error : new Error(String(error));
 
       // If we reach here, it means retries failed, circuit breaker failed (or open), and fallback failed (or missing).
-      // Push to DLQ.
-      await this.dlq.push(name, args, err);
+      // Push to Error Queue.
+      await this.errors.push(name, args, err);
 
       return { error: err.message };
     }

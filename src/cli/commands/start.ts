@@ -86,6 +86,12 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     return c;
   });
 
+  // Ensure at least one channel exists (Stdio fallback if none configured)
+  if (channels.length === 0) {
+      console.log('No external channels configured. Using Stdio (console) channel.');
+      channels.push({ type: 'stdio' });
+  }
+
   let store: import('../../core/types.js').Store;
 
   if (config.persistence?.type === 'sqlite') {
@@ -105,8 +111,10 @@ export async function startCommand(interactive: boolean = false): Promise<void> 
     channel: channels,
     persistence: store,
     call: config.call,
+    history: config.history,
     plugins: config.plugins,
     tools,
+    errors: config.errors,
     hooks: {
       onMessage: async (ctx: MessageContext) => {
         if (!interactive) {

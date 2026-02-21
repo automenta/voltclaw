@@ -12,6 +12,35 @@ export async function configureCommand(): Promise<void> {
 
   const currentConfig = await loadConfig();
 
+  // 0. Setup Profile
+  const profileAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'profile',
+      message: 'Select Setup Profile:',
+      choices: [
+        { name: 'Standard (Cloud LLMs / Powerful Local)', value: 'standard' },
+        { name: 'Compact (Low Resource / Small Local Models)', value: 'compact' },
+        { name: 'Custom', value: 'custom' }
+      ],
+      default: 'standard'
+    }
+  ] as any);
+
+  // Apply profile defaults
+  let profileConfig: Partial<CLIConfig> = {};
+  if (profileAnswers.profile === 'compact') {
+      profileConfig = {
+          call: { ...currentConfig.call, maxDepth: 2, maxCalls: 10 },
+          history: { maxMessages: 20, contextWindowSize: 20 }
+      };
+      // Default to Ollama if compact
+      if (!currentConfig.llm.provider) {
+          currentConfig.llm.provider = 'ollama';
+          currentConfig.llm.model = 'llama3.2';
+      }
+  }
+
   // 1. LLM Configuration
   const llmAnswers = await inquirer.prompt([
     {
@@ -164,53 +193,56 @@ export async function configureCommand(): Promise<void> {
       // no keys
   }
 
-  const identityChoice = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: 'Nostr Identity Management:',
-      choices: [
-        { name: 'Keep existing identity', value: 'keep', disabled: !keys.secretKey },
-        { name: 'Generate new identity', value: 'generate' },
-        { name: 'Import private key (nsec/hex)', value: 'import' }
-      ]
-    }
-  ] as any);
-
-  if (identityChoice.action === 'generate') {
-    keys = await generateNewKeyPair();
-    console.log(`Generated new identity: ${keys.npub}`);
-  } else if (identityChoice.action === 'import') {
-    const importAnswer = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'key',
-        message: 'Enter private key (nsec or hex):',
-        mask: '*'
-      }
-    ] as any);
-    const hex = resolveToHex(importAnswer.key);
-    if (hex.length !== 64) {
-        console.error('Invalid key length. Using generated key instead.');
-        keys = await generateNewKeyPair();
-    } else {
-        try {
-            keys.secretKey = hex;
-            keys.publicKey = getPublicKeyFromSecret(hex);
-            keys.nsec = nip19.nsecEncode(Uint8Array.from(Buffer.from(hex, 'hex')));
-            keys.npub = nip19.npubEncode(keys.publicKey);
-            console.log(`Imported identity: ${keys.npub}`);
-        } catch (error) {
-            console.error('Failed to import key:', error);
-            console.log('Generating new identity instead.');
-            keys = await generateNewKeyPair();
+  if (nostrEnabled.enable) {
+      const identityChoice = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'Nostr Identity Management:',
+          choices: [
+            { name: 'Keep existing identity', value: 'keep', disabled: !keys.secretKey },
+            { name: 'Generate new identity', value: 'generate' },
+            { name: 'Import private key (nsec/hex)', value: 'import' }
+          ]
         }
-    }
+      ] as any);
+
+      if (identityChoice.action === 'generate') {
+        keys = await generateNewKeyPair();
+        console.log(`Generated new identity: ${keys.npub}`);
+      } else if (identityChoice.action === 'import') {
+        const importAnswer = await inquirer.prompt([
+          {
+            type: 'password',
+            name: 'key',
+            message: 'Enter private key (nsec or hex):',
+            mask: '*'
+          }
+        ] as any);
+        const hex = resolveToHex(importAnswer.key);
+        if (hex.length !== 64) {
+            console.error('Invalid key length. Using generated key instead.');
+            keys = await generateNewKeyPair();
+        } else {
+            try {
+                keys.secretKey = hex;
+                keys.publicKey = getPublicKeyFromSecret(hex);
+                keys.nsec = nip19.nsecEncode(Uint8Array.from(Buffer.from(hex, 'hex')));
+                keys.npub = nip19.npubEncode(keys.publicKey);
+                console.log(`Imported identity: ${keys.npub}`);
+            } catch (error) {
+                console.error('Failed to import key:', error);
+                console.log('Generating new identity instead.');
+                keys = await generateNewKeyPair();
+            }
+        }
+      }
   }
 
   // Save Config & Keys
   const newConfig: CLIConfig = {
     ...currentConfig,
+    ...profileConfig,
     channels: channels,
     llm: {
       provider: llmAnswers.provider as any,

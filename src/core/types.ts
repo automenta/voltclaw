@@ -14,7 +14,7 @@ export interface VoltClawAgentOptions {
   circuitBreaker?: CircuitBreakerConfig;
   retry?: RetryConfig;
   fallbacks?: Record<string, string>;
-  dlq?: DLQConfig;
+  errors?: ErrorQueueConfig;
   audit?: { path?: string };
   permissions?: PermissionConfig;
   rlm?: CodeExecConfig;
@@ -34,7 +34,7 @@ export interface PermissionConfig {
   policy?: 'allow_all' | 'deny_all'; // Default policy if no role specified on tool
 }
 
-export interface DLQConfig {
+export interface ErrorQueueConfig {
   type: 'memory' | 'file';
   path?: string;
   enableTools?: boolean;

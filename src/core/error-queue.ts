@@ -11,7 +11,7 @@ export interface FailedOperation {
   retryCount: number;
 }
 
-export interface DLQStore {
+export interface ErrorQueueStore {
   save(op: FailedOperation): Promise<void>;
   list(): Promise<FailedOperation[]>;
   remove(id: string): Promise<void>;
@@ -19,7 +19,7 @@ export interface DLQStore {
   get(id: string): Promise<FailedOperation | undefined>;
 }
 
-export class InMemoryDLQ implements DLQStore {
+export class InMemoryErrorQueue implements ErrorQueueStore {
   private queue: Map<string, FailedOperation> = new Map();
 
   async save(op: FailedOperation): Promise<void> {
@@ -43,7 +43,7 @@ export class InMemoryDLQ implements DLQStore {
   }
 }
 
-export class FileDLQ implements DLQStore {
+export class FileErrorQueue implements ErrorQueueStore {
   private queue: Map<string, FailedOperation> = new Map();
   private readonly path: string;
   private readonly mutex = new AsyncMutex();
@@ -116,11 +116,11 @@ export class FileDLQ implements DLQStore {
   }
 }
 
-export class DeadLetterQueue {
-  private readonly store: DLQStore;
+export class ErrorQueue {
+  private readonly store: ErrorQueueStore;
 
-  constructor(store?: DLQStore) {
-    this.store = store ?? new InMemoryDLQ();
+  constructor(store?: ErrorQueueStore) {
+    this.store = store ?? new InMemoryErrorQueue();
   }
 
   async push(tool: string, args: Record<string, unknown>, error: Error, retryCount: number = 0): Promise<string> {
