@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Box, Text } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 export const InputPrompt = ({
@@ -10,9 +10,40 @@ export const InputPrompt = ({
   isThinking: boolean;
 }) => {
   const [value, setValue] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  useInput((input, key) => {
+    if (isThinking) return;
+
+    if (key.upArrow) {
+      if (history.length > 0) {
+          if (historyIndex < history.length - 1) {
+              const newIndex = historyIndex + 1;
+              setHistoryIndex(newIndex);
+              setValue(history[history.length - 1 - newIndex]);
+          }
+      }
+    }
+
+    if (key.downArrow) {
+      if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setValue(history[history.length - 1 - newIndex]);
+      } else if (historyIndex === 0) {
+        setHistoryIndex(-1);
+        setValue('');
+      }
+    }
+  });
 
   if (isThinking) {
-    return null;
+    return (
+        <Box>
+          <Text dimColor>❯ Processing...</Text>
+        </Box>
+    );
   }
 
   return (
@@ -22,8 +53,15 @@ export const InputPrompt = ({
         value={value}
         onChange={setValue}
         onSubmit={(val) => {
-            if (val.trim()) {
-                onSubmit(val);
+            const trimmed = val.trim();
+            if (trimmed) {
+                setHistory(prev => {
+                    // Avoid duplicates at the end
+                    if (prev.length > 0 && prev[prev.length - 1] === trimmed) return prev;
+                    return [...prev, trimmed];
+                });
+                setHistoryIndex(-1);
+                onSubmit(trimmed);
                 setValue('');
             }
         }}
