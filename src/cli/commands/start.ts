@@ -151,7 +151,7 @@ export async function startCommand(interactive: boolean = false, demo: boolean =
   if (interactive) {
     // Render Ink App
     console.clear();
-    const { waitUntilExit } = render(React.createElement(App, { agent, approvalBridge, demoMode: false }));
+    const { waitUntilExit } = render(React.createElement(App, { agent, store, approvalBridge, demoMode: false }));
     await waitUntilExit();
     await agent.stop();
     process.exit(0);

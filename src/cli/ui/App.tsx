@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, useApp, useInput, Text } from 'ink';
-import { VoltClawAgent } from '../../core/agent.js';
+import { VoltClawAgent, type Store } from '../../core/agent.js';
 import { MessageList, ChatMessage } from './components/MessageList.js';
 import { InputPrompt } from './components/InputPrompt.js';
 import { StatusLine } from './components/StatusLine.js';
@@ -28,7 +28,7 @@ const ApprovalPrompt = ({ tool, args, onResolve }: { tool: string, args: any, on
     );
 };
 
-export const App = ({ agent, approvalBridge, demoMode = false }: { agent?: VoltClawAgent, approvalBridge?: ApprovalBridge, demoMode?: boolean }) => {
+export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?: VoltClawAgent, store?: Store, approvalBridge?: ApprovalBridge, demoMode?: boolean }) => {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState('');
@@ -64,8 +64,7 @@ export const App = ({ agent, approvalBridge, demoMode = false }: { agent?: VoltC
   });
 
   const updateContext = async () => {
-        if (!agent) return;
-        const store = agent.getStore();
+        if (!store) return;
 
         try {
             const sessionResult = store.get('self', true);
