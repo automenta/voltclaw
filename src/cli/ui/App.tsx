@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, useApp, useInput } from 'ink';
 import { VoltClawAgent } from '../../core/agent.js';
-import { MessageList, ChatMessage } from './MessageList.js';
-import { InputPrompt } from './InputPrompt.js';
-import { StatusLine } from './StatusLine.js';
-import { ContextVisualizer, AgentContext } from './ContextVisualizer.js';
+import { MessageList, ChatMessage } from './components/MessageList.js';
+import { InputPrompt } from './components/InputPrompt.js';
+import { StatusLine } from './components/StatusLine.js';
+import { ContextVisualizer, AgentContext } from './components/ContextVisualizer.js';
 import Gradient from 'ink-gradient';
 import BigText from 'ink-big-text';
 
@@ -161,8 +161,8 @@ export const App = ({ agent, approvalBridge }: { agent: VoltClawAgent, approvalB
   };
 
   return (
-    <Box flexDirection="column" padding={1}>
-        <Box>
+    <Box flexDirection="column" padding={1} width="100%">
+        <Box justifyContent="center" marginBottom={1}>
             <Gradient name="cyan">
                 <BigText text="VoltClaw" font="tiny" />
             </Gradient>
@@ -170,7 +170,9 @@ export const App = ({ agent, approvalBridge }: { agent: VoltClawAgent, approvalB
 
         <ContextVisualizer context={context} />
 
-        <MessageList messages={messages} streamingContent={streamingContent} />
+        <Box flexDirection="column" flexGrow={1}>
+            <MessageList messages={messages} streamingContent={streamingContent} />
+        </Box>
 
         {approvalRequest ? (
             <ApprovalPrompt

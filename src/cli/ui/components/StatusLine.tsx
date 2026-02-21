@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 
@@ -14,11 +14,12 @@ export const StatusLine = ({
   }
 
   return (
-    <Box marginY={1}>
+    <Box paddingY={1} flexDirection="row" justifyContent="center">
       <Text color="green">
         <Spinner type="dots" />
       </Text>
-      <Text> {currentTool ? `Executing tool: ${currentTool}...` : 'Thinking...'}</Text>
+      <Text bold color="green"> {currentTool ? ` EXECUTING: ${currentTool}` : ' THINKING...'}</Text>
+      {currentTool && <Text dimColor> (Please wait)</Text>}
     </Box>
   );
 };
