@@ -90,11 +90,13 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
                 depth: session.depth || 0,
                 estCostUSD: session.estCostUSD || 0,
                 callCount: session.callCount || 0,
-                activeSubtasks: Object.entries(session.subTasks || {}).map(([id, st]) => ({
-                    id,
-                    task: st.task,
-                    depth: (session.depth || 0) + 1
-                }))
+                activeSubtasks: Object.entries(session.subTasks || {})
+                    .filter(([_, st]) => !st.arrived && !st.error) // Only show actually active tasks
+                    .map(([id, st]) => ({
+                        id,
+                        task: st.task,
+                        depth: (session.depth || 0) + 1
+                    }))
             }));
         } catch (e) {
             // unexpected error in store access
@@ -199,6 +201,8 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
             }]);
         }
         updateContext();
+        // Force refresh streaming content just in case chunks arrived during tool execution
+        flushStreaming();
     };
 
     agent.on('tool_start', onToolStart);
@@ -242,7 +246,8 @@ export const App = ({ agent, store, approvalBridge, demoMode = false }: { agent?
     if (!agent) return;
 
     try {
-        for await (const chunk of agent.queryStream(input)) {
+        const stream = agent.queryStream(input);
+        for await (const chunk of stream) {
             streamingContentRef.current += chunk;
             setStreamingContent(streamingContentRef.current);
         }

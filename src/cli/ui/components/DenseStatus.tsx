@@ -45,21 +45,16 @@ export const DenseStatus = ({
   const cost = context.estCostUSD.toFixed(3);
   const calls = context.callCount;
 
-  // Dense layout: D:0 | C:0 | $:0.000 | M:-- [Thinking...]
+  // Dense layout: D:0 C:0 $:0.000 M:-- [Thinking...]
   return (
     <Box flexDirection="column" paddingX={0} marginY={0}>
         <Box width="100%">
             <Text color="blue" bold> D:{context.depth} </Text>
-            <Text color="gray">|</Text>
             <Text color="magenta"> C:{calls} </Text>
-            <Text color="gray">|</Text>
             <Text color={Number(cost) > 0.5 ? 'red' : 'green'}> $:{cost} </Text>
-            <Text color="gray">|</Text>
             <Text color="yellow"> {memText} </Text>
-
-            <Box flexGrow={1} marginLeft={2}>
-                 {isThinking && <Text color="green" backgroundColor="black" bold> ⚡ THINKING... </Text>}
-            </Box>
+            <Box flexGrow={1} />
+            {isThinking && <Text color="green" dimColor>Thinking... </Text>}
         </Box>
         <RecursionChain context={context} />
         <Text dimColor>────────────────────────────────────────────────────────────────────────────────</Text>
