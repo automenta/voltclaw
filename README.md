@@ -25,14 +25,13 @@ pnpm start "Analyze this codebase" --recursive
 
 ## Features
 
-- **Recursive Calls** - Agents spawn sub-agents for complex tasks
+- **RLM Paradigm** - Recursive Language Model (RLM) with symbolic recursion.  Agents spawn sub-agents for complex tasks.  Inspired by https://github.com/rawwerks/ypi
+- **LCM Integration** - Lossless Context Management for efficient recursion
 - **Nostr Native** - Decentralized, encrypted P2P communication
 - **LLM Agnostic** - Ollama, OpenAI, Anthropic, or custom providers
 - **Tool System** - File operations, HTTP requests, time utilities
 - **Zero Config** - Works out of the box with sensible defaults
 - **Self-Improving** - Can write new tools and modify its own code
-- **LCM Integration** - Lossless Context Management for efficient recursion
-- **RLM Paradigm** - Recursive Language Model (RLM) with symbolic recursion
 
 ## Installation
 
