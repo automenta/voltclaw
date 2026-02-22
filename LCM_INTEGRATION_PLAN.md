@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**LCM (Lossless Context Management)** from Voltropy offers a complementary approach to VoltClaw's existing RLM (Record-Label-Model) architecture. This document outlines how to integrate LCM's key innovations while preserving VoltClaw's RLM foundation.
+**LCM (Lossless Context Management)** from Voltropy offers a complementary approach to VoltClaw's existing RLM architecture. This document outlines how to integrate LCM's key innovations while preserving VoltClaw's RLM foundation.
 
 ---
 
