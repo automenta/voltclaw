@@ -233,7 +233,8 @@ Each sub-agent has full access to tools and can spawn further sub-agents (up to 
 
 - **Max Depth** (default: 4) - Limits recursion depth
 - **Max Calls** (default: 25) - Limits total calls
-- **Budget** (default: $0.75) - Tracks estimated cost
+- **Budget** (ex: $0.75, default: Infinite) - Tracks estimated cost
+- **Tokens** (default: Infinite) - Limits output
 - **Timeout** (default: 10 min) - Wall-clock limit
 
 ### Example
