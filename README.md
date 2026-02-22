@@ -32,7 +32,7 @@ pnpm start "Analyze this codebase" --recursive
 - **Zero Config** - Works out of the box with sensible defaults
 - **Self-Improving** - Can write new tools and modify its own code
 - **LCM Integration** - Lossless Context Management for efficient recursion
-- **RLM Paradigm** - Record-Label-Model with symbolic recursion
+- **RLM Paradigm** - Recursive Language Model (RLM) with symbolic recursion
 
 ## Installation
 
